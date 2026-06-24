@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Z3Gateway Control Panel</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Z3Gateway Control Panel</h1>
+        <p id="status-line">未连接</p>
+      </div>
+      <div class="status-pill" id="run-pill">STOPPED</div>
+    </header>
+
+    <main class="layout">
+      <div class="left-column">
+      <section class="panel launch-panel">
+        <div class="panel-title">
+          <h2>启动</h2>
+          <button id="refresh-devices" class="ghost" type="button">刷新串口</button>
+        </div>
+
+        <label class="field wide">
+          <span>Executable</span>
+          <div class="inline-control">
+            <input id="executable" autocomplete="off" />
+            <button id="browse-default" type="button">浏览</button>
+          </div>
+        </label>
+
+        <div class="launch-grid">
+          <label class="field">
+            <span>Serial</span>
+            <input id="serial-port" list="serial-list" placeholder="/dev/ttyUSB0" />
+            <datalist id="serial-list"></datalist>
+          </label>
+          <label class="field">
+            <span>Network</span>
+            <input id="network-index" inputmode="numeric" value="1" />
+          </label>
+          <label class="field">
+            <span>Baud</span>
+            <input id="baud-rate" inputmode="numeric" value="115200" />
+          </label>
+          <div class="button-row">
+            <button id="start-btn" class="primary" type="button">启动</button>
+            <button id="stop-btn" class="danger" type="button">停止</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel zigbee-devices-panel">
+        <div class="panel-title">
+          <h2>设备记录</h2>
+          <button id="reparse-devices" class="ghost" type="button">重扫日志</button>
+        </div>
+        <div id="zigbee-device-list" class="zigbee-device-list">
+          <p class="muted">暂无设备。</p>
+        </div>
+      </section>
+
+      <details class="panel browser-panel">
+        <summary class="browser-summary">
+          <span>路径选择</span>
+          <span class="summary-hint">展开</span>
+        </summary>
+        <div class="browser-body">
+          <div class="panel-title compact-title">
+            <h2>路径选择</h2>
+            <button id="browser-up" class="ghost" type="button">上级</button>
+          </div>
+          <div class="inline-control">
+            <input id="browser-path" autocomplete="off" />
+            <button id="browser-go" type="button">打开</button>
+          </div>
+          <div id="browser-list" class="browser-list"></div>
+        </div>
+      </details>
+
+      <section class="panel manual-panel">
+        <div class="panel-title">
+          <h2>手动输入</h2>
+          <button id="send-manual" class="primary" type="button">发送</button>
+        </div>
+        <textarea id="manual-command" spellcheck="false" placeholder="zcl on-off toggle&#10;send 0x67D0 1 1"></textarea>
+      </section>
+      </div>
+
+      <div class="right-column">
+      <section class="panel command-panel">
+        <div class="panel-title">
+          <h2>命令</h2>
+          <input id="command-filter" class="compact-input" placeholder="过滤" />
+        </div>
+        <div id="group-tabs" class="tabs"></div>
+        <div class="command-split">
+          <div id="command-list" class="command-list"></div>
+        </div>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-title">
+          <h2>日志</h2>
+          <div class="toolbar">
+            <input id="log-search" class="compact-input" placeholder="搜索" />
+            <button id="copy-log" class="ghost" type="button">复制</button>
+            <button id="clear-log" class="ghost" type="button">清空</button>
+          </div>
+        </div>
+        <pre id="log-output"></pre>
+      </section>
+      </div>
+
+      <aside id="command-drawer" class="panel command-drawer" aria-label="命令详情">
+        <div class="drawer-title">
+          <h3 id="selected-title">未选择命令</h3>
+          <div class="drawer-actions">
+            <button id="toggle-command-drawer-pin" class="ghost pin-toggle" type="button" aria-pressed="true">已钉住</button>
+            <button id="close-command-drawer" class="ghost" type="button">收起</button>
+          </div>
+        </div>
+        <div id="param-form" class="param-form drawer-form"></div>
+        <div class="drawer-footer">
+          <label class="field wide">
+            <span>Preview</span>
+            <textarea id="command-preview" readonly spellcheck="false"></textarea>
+          </label>
+          <button id="send-selected" class="primary wide-button" type="button">发送选中命令</button>
+        </div>
+      </aside>
+    </main>
+
+
+    <div id="file-picker" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="file-picker-title">
+      <div class="modal-backdrop" id="file-picker-backdrop"></div>
+      <section class="modal-panel file-picker-panel">
+        <div class="modal-title">
+          <h2 id="file-picker-title">选择 Z3Gateway 可执行文件</h2>
+          <button id="file-picker-close" class="ghost" type="button">关闭</button>
+        </div>
+        <div class="inline-control">
+          <input id="file-picker-path" autocomplete="off" />
+          <button id="file-picker-up" class="ghost" type="button">上级</button>
+          <button id="file-picker-go" type="button">打开</button>
+        </div>
+        <div id="file-picker-list" class="browser-list modal-browser-list"></div>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

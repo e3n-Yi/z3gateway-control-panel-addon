@@ -1,0 +1,599 @@
+{
+  "version": 1,
+  "default_group": "网络",
+  "parameter_defaults": {
+    "nodeId": "",
+    "srcEp": "1",
+    "dstEp": "1",
+    "groupId": "0x4321",
+    "sceneId": "0x15",
+    "transitionTime": "10",
+    "level": "127",
+    "panId": "0x1234",
+    "txPower": "3",
+    "channel": "11",
+    "networkType": "1",
+    "clusterId": "0x0006",
+    "attributeId": "0x0000",
+    "type": "0x30",
+    "data": "{01}",
+    "targetNode": "",
+    "srcEui": "",
+    "destEui": "",
+    "destEp": "1",
+    "removeChildren": "0",
+    "rejoin": "0",
+    "groupName": "group1",
+    "sceneName": "test15",
+    "extensionFields": "0x01010006",
+    "zeroCrossOnUs": "300",
+    "zeroCrossOffUs": "1",
+    "otaEndpoint": "1",
+    "otaPayloadType": "1",
+    "otaQueryJitter": "100",
+    "otaManufacturerId": "0x100B",
+    "otaImageTypeId": "",
+    "otaFirmwareVersion": ""
+  },
+  "groups": [
+    {
+      "name": "网络",
+      "commands": [
+        {
+          "id": "network_leave",
+          "label": "销毁网络",
+          "command": "network leave",
+          "danger": true
+        },
+        {
+          "id": "network_start",
+          "label": "创建集中式网络",
+          "command": "plugin network-creator start 1"
+        },
+        {
+          "id": "network_form",
+          "label": "指定 PAN/信道建网",
+          "command": "plugin network-creator form {{networkType}} {{panId}} {{txPower}} {{channel}}",
+          "fields": [
+            {
+              "key": "networkType",
+              "label": "网络类型"
+            },
+            {
+              "key": "panId",
+              "label": "PAN ID"
+            },
+            {
+              "key": "txPower",
+              "label": "发射功率"
+            },
+            {
+              "key": "channel",
+              "label": "信道"
+            }
+          ]
+        },
+        {
+          "id": "open_network",
+          "label": "开放入网 180s",
+          "command": "plugin network-creator-security open-network"
+        },
+        {
+          "id": "close_network",
+          "label": "关闭入网",
+          "command": "plugin network-creator-security close-network"
+        },
+        {
+          "id": "set_joining_link_key",
+          "label": "设置入网 Link Key",
+          "command": "plugin network-creator-security set-joining-link-key"
+        },
+        {
+          "id": "info",
+          "label": "网关信息",
+          "command": "info"
+        },
+        {
+          "id": "device_table",
+          "label": "设备表",
+          "command": "plugin device-table print"
+        },
+        {
+          "id": "neighbor_table",
+          "label": "邻居表",
+          "command": "plugin stack-diagnostics neighbor-table"
+        },
+        {
+          "id": "child_table",
+          "label": "子设备表",
+          "command": "plugin stack-diagnostics child-table"
+        }
+      ]
+    },
+    {
+      "name": "发送",
+      "commands": [
+        {
+          "id": "send_unicast",
+          "label": "单播发送",
+          "command": "send {{nodeId}} {{srcEp}} {{dstEp}}",
+          "fields": [
+            {
+              "key": "nodeId",
+              "label": "Node ID",
+              "deviceValue": "nodeId"
+            },
+            {
+              "key": "srcEp",
+              "label": "源 EP"
+            },
+            {
+              "key": "dstEp",
+              "label": "目标 EP"
+            }
+          ]
+        },
+        {
+          "id": "send_multicast",
+          "label": "组播发送",
+          "command": "send_multicast {{groupId}} {{srcEp}}",
+          "fields": [
+            {
+              "key": "groupId",
+              "label": "Group ID"
+            },
+            {
+              "key": "srcEp",
+              "label": "源 EP"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "读属性",
+      "commands": [
+        {
+          "id": "read_custom",
+          "label": "读取属性",
+          "command": "zcl global read {{clusterId}} {{attributeId}}",
+          "fields": [
+            {
+              "key": "clusterId",
+              "label": "Cluster ID"
+            },
+            {
+              "key": "attributeId",
+              "label": "Attribute ID"
+            }
+          ]
+        },
+        {
+          "id": "read_manufacturer",
+          "label": "Manufacturer Name",
+          "command": "zcl global read 0x0000 0x0004"
+        },
+        {
+          "id": "read_model",
+          "label": "Model ID",
+          "command": "zcl global read 0x0000 0x0005"
+        },
+        {
+          "id": "read_date_code",
+          "label": "Date Code",
+          "command": "zcl global read 0x0000 0x0006"
+        },
+        {
+          "id": "read_sw_build",
+          "label": "SW Build ID",
+          "command": "zcl global read 0x0000 0x4000"
+        },
+        {
+          "id": "read_group_name_support",
+          "label": "Group Name Support",
+          "command": "zcl global read 0x0004 0x0000"
+        },
+        {
+          "id": "read_scene_name_support",
+          "label": "Scene Name Support",
+          "command": "zcl global read 0x0005 0x0004"
+        },
+        {
+          "id": "read_lqi",
+          "label": "读取 LQI",
+          "command": "zcl global read 0x0B05 0x011C"
+        },
+        {
+          "id": "read_rssi",
+          "label": "读取 RSSI",
+          "command": "zcl global read 0x0B05 0x011D"
+        }
+      ]
+    },
+    {
+      "name": "开关/亮度",
+      "commands": [
+        {
+          "id": "onoff_on",
+          "label": "On",
+          "command": "zcl on-off on"
+        },
+        {
+          "id": "onoff_off",
+          "label": "Off",
+          "command": "zcl on-off off"
+        },
+        {
+          "id": "onoff_toggle",
+          "label": "Toggle",
+          "command": "zcl on-off toggle"
+        },
+        {
+          "id": "level_move",
+          "label": "亮度设置",
+          "command": "zcl level-control mv-to-level {{level}} {{transitionTime}}",
+          "fields": [
+            {
+              "key": "level",
+              "label": "Level"
+            },
+            {
+              "key": "transitionTime",
+              "label": "Transition"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "过零校准",
+      "commands": [
+        {
+          "id": "zero_cross_on_calibration",
+          "label": "开灯校准",
+          "command": "raw 0xEEEE {11 01 FA {{zeroCrossOnBytes}}}\nsend {{targetNode}} {{srcEp}} {{dstEp}}",
+          "fields": [
+            {
+              "key": "targetNode",
+              "label": "Target Node",
+              "deviceValue": "nodeId"
+            },
+            {
+              "key": "zeroCrossOnUs",
+              "label": "开灯时间 us",
+              "default": "300",
+              "placeholder": "300",
+              "inputType": "number",
+              "min": "0",
+              "max": "65535",
+              "step": "1",
+              "encode": "uint16HexBytes",
+              "outputKey": "zeroCrossOnBytes"
+            },
+            {
+              "key": "srcEp",
+              "label": "源 EP"
+            },
+            {
+              "key": "dstEp",
+              "label": "目标 EP"
+            }
+          ]
+        },
+        {
+          "id": "zero_cross_off_calibration",
+          "label": "关灯校准",
+          "command": "raw 0xEEEE {11 01 FB {{zeroCrossOffBytes}}}\nsend {{targetNode}} {{srcEp}} {{dstEp}}",
+          "fields": [
+            {
+              "key": "targetNode",
+              "label": "Target Node",
+              "deviceValue": "nodeId"
+            },
+            {
+              "key": "zeroCrossOffUs",
+              "label": "关灯时间 us",
+              "default": "1",
+              "placeholder": "1",
+              "inputType": "number",
+              "min": "0",
+              "max": "65535",
+              "step": "1",
+              "encode": "uint16HexBytes",
+              "outputKey": "zeroCrossOffBytes"
+            },
+            {
+              "key": "srcEp",
+              "label": "源 EP"
+            },
+            {
+              "key": "dstEp",
+              "label": "目标 EP"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OTA",
+      "commands": [
+        {
+          "id": "ota_print_images",
+          "label": "查看 OTA 镜像",
+          "command": "plugin ota-storage-common printImages"
+        },
+        {
+          "id": "ota_notify",
+          "label": "开始 OTA",
+          "command": "plugin ota-server notify {{nodeId}} {{otaEndpoint}} {{otaPayloadType}} {{otaQueryJitter}} {{otaManufacturerId}} {{otaImageTypeId}} {{otaFirmwareVersion}}",
+          "fields": [
+            {
+              "key": "nodeId",
+              "label": "Node ID",
+              "deviceValue": "nodeId"
+            },
+            {
+              "key": "otaEndpoint",
+              "label": "Endpoint",
+              "default": "1",
+              "placeholder": "1",
+              "inputType": "number",
+              "min": "1",
+              "max": "242",
+              "step": "1"
+            },
+            {
+              "key": "otaPayloadType",
+              "label": "Payload Type",
+              "default": "1",
+              "placeholder": "1"
+            },
+            {
+              "key": "otaQueryJitter",
+              "label": "Query Jitter",
+              "default": "100",
+              "placeholder": "100",
+              "inputType": "number",
+              "min": "0",
+              "max": "100",
+              "step": "1"
+            },
+            {
+              "key": "otaManufacturerId",
+              "label": "Manufacturer ID",
+              "default": "0x100B",
+              "placeholder": "0x100B / 0x126A"
+            },
+            {
+              "key": "otaImageTypeId",
+              "label": "Image Type ID",
+              "placeholder": "0x02FB / 0x03E8"
+            },
+            {
+              "key": "otaFirmwareVersion",
+              "label": "Firmware Version",
+              "placeholder": "0x00000005"
+            }
+          ],
+          "danger": true
+        }
+      ]
+    },
+    {
+      "name": "写属性",
+      "commands": [
+        {
+          "id": "write_custom",
+          "label": "写属性",
+          "command": "zcl global write {{clusterId}} {{attributeId}} {{type}} {{data}}",
+          "fields": [
+            {
+              "key": "clusterId",
+              "label": "Cluster ID"
+            },
+            {
+              "key": "attributeId",
+              "label": "Attribute ID"
+            },
+            {
+              "key": "type",
+              "label": "Type"
+            },
+            {
+              "key": "data",
+              "label": "Data"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "组",
+      "commands": [
+        {
+          "id": "group_add",
+          "label": "加组",
+          "command": "zcl groups add {{groupId}} \"{{groupName}}\"",
+          "fields": [
+            {
+              "key": "groupId",
+              "label": "Group ID"
+            },
+            {
+              "key": "groupName",
+              "label": "组名"
+            }
+          ]
+        },
+        {
+          "id": "group_view",
+          "label": "查询组",
+          "command": "zcl groups view {{groupId}}",
+          "fields": [
+            {
+              "key": "groupId",
+              "label": "Group ID"
+            }
+          ]
+        },
+        {
+          "id": "group_toggle_packet",
+          "label": "组 Toggle 组包",
+          "command": "zcl on-off toggle"
+        }
+      ]
+    },
+    {
+      "name": "场景",
+      "commands": [
+        {
+          "id": "scene_add_custom",
+          "label": "加场景",
+          "command": "zcl scenes add {{groupId}} {{sceneId}} {{transitionTime}} \"{{sceneName}}\" {{extensionFields}}",
+          "fields": [
+            {
+              "key": "groupId",
+              "label": "Group ID"
+            },
+            {
+              "key": "sceneId",
+              "label": "Scene ID"
+            },
+            {
+              "key": "transitionTime",
+              "label": "Transition"
+            },
+            {
+              "key": "sceneName",
+              "label": "场景名"
+            },
+            {
+              "key": "extensionFields",
+              "label": "Extension Fields"
+            }
+          ]
+        },
+        {
+          "id": "scene_recall",
+          "label": "激活场景",
+          "command": "zcl scenes recall {{groupId}} {{sceneId}}",
+          "fields": [
+            {
+              "key": "groupId",
+              "label": "Group ID"
+            },
+            {
+              "key": "sceneId",
+              "label": "Scene ID"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "绑定",
+      "commands": [
+        {
+          "id": "bind_custom",
+          "label": "绑定",
+          "command": "zdo bind {{targetNode}} {{srcEp}} {{destEp}} {{clusterId}} {{srcEui}} {{destEui}}",
+          "fields": [
+            {
+              "key": "targetNode",
+              "label": "Target Node",
+              "deviceValue": "nodeId"
+            },
+            {
+              "key": "srcEp",
+              "label": "Source EP"
+            },
+            {
+              "key": "destEp",
+              "label": "Dest EP"
+            },
+            {
+              "key": "clusterId",
+              "label": "Cluster ID"
+            },
+            {
+              "key": "srcEui",
+              "label": "Source EUI64",
+              "deviceValue": "eui64Braced"
+            },
+            {
+              "key": "destEui",
+              "label": "Dest EUI64",
+              "deviceValue": "eui64Braced"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "解绑",
+      "commands": [
+        {
+          "id": "unbind_custom",
+          "label": "解绑",
+          "command": "zdo unbind unicast {{targetNode}} {{srcEui}} {{srcEp}} {{clusterId}} {{destEui}} {{destEp}}",
+          "fields": [
+            {
+              "key": "targetNode",
+              "label": "Target Node",
+              "deviceValue": "nodeId"
+            },
+            {
+              "key": "srcEui",
+              "label": "Source EUI64",
+              "deviceValue": "eui64Braced"
+            },
+            {
+              "key": "srcEp",
+              "label": "Source EP"
+            },
+            {
+              "key": "clusterId",
+              "label": "Cluster ID"
+            },
+            {
+              "key": "destEui",
+              "label": "Dest EUI64",
+              "deviceValue": "eui64Braced"
+            },
+            {
+              "key": "destEp",
+              "label": "Dest EP"
+            }
+          ],
+          "danger": true
+        }
+      ]
+    },
+    {
+      "name": "离网",
+      "commands": [
+        {
+          "id": "zdo_leave",
+          "label": "设备离网",
+          "command": "zdo leave {{targetNode}} {{removeChildren}} {{rejoin}}",
+          "fields": [
+            {
+              "key": "targetNode",
+              "label": "Target Node",
+              "deviceValue": "nodeId"
+            },
+            {
+              "key": "removeChildren",
+              "label": "Remove Children"
+            },
+            {
+              "key": "rejoin",
+              "label": "Rejoin"
+            }
+          ],
+          "danger": true
+        }
+      ]
+    }
+  ]
+}
