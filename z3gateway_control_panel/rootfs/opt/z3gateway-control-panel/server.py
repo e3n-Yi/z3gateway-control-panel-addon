@@ -14,8 +14,10 @@ import os
 import pty
 import queue
 import re
+import select
 import signal
 import subprocess
+import termios
 import threading
 import time
 import traceback
@@ -71,6 +73,15 @@ DEFAULT_SERIAL_PORT = os.environ.get("Z3_PANEL_DEFAULT_SERIAL_PORT", "")
 CONFIGURED_SERIAL_PORT = os.environ.get("Z3_PANEL_CONFIGURED_SERIAL_PORT", DEFAULT_SERIAL_PORT)
 DEFAULT_NETWORK_INDEX = os.environ.get("Z3_PANEL_DEFAULT_NETWORK_INDEX", "1")
 DEFAULT_BAUD_RATE = os.environ.get("Z3_PANEL_DEFAULT_BAUD_RATE", "115200")
+CALIBRATION_SERIAL_PORT = os.environ.get("Z3_PANEL_CALIBRATION_SERIAL_PORT", "")
+CALIBRATION_BAUD_RATE = 9600
+ZERO_CROSS_HALF_CYCLE_US = 10000
+ZERO_CROSS_SUCCESS_WINDOW_US = 500
+ZERO_CROSS_MAX_ROUNDS = 20
+ZERO_CROSS_MEASUREMENT_TIMEOUT_SECONDS = 8.0
+ZERO_CROSS_SWITCH_INTERVAL_SECONDS = 3.0
+ZERO_CROSS_CALIBRATION_SETTLE_SECONDS = 2.0
+ZERO_CROSS_MAX_CONSECUTIVE_TIMEOUTS = 3
 
 
 def now_iso() -> str:
@@ -118,6 +129,20 @@ def infer_workdir(executable: Path) -> Path:
 def clean_log_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text)
+
+
+def normalize_node_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    match = re.search(r"0x[0-9A-Fa-f]{1,4}", str(value))
+    if not match:
+        return None
+    return f"0x{int(match.group(0), 16):04X}"
+
+
+def uint16_hex_bytes(value: int) -> str:
+    value = max(0, min(0xFFFF, int(value)))
+    return f"{(value >> 8) & 0xFF:02X} {value & 0xFF:02X}"
 
 
 class ZigbeeDeviceRegistry:
@@ -388,12 +413,7 @@ class ZigbeeDeviceRegistry:
         return None
 
     def _normalize_node_id(self, value: str | None) -> str | None:
-        if not value:
-            return None
-        match = re.search(r"0x[0-9A-Fa-f]{1,4}", str(value))
-        if not match:
-            return None
-        return f"0x{int(match.group(0), 16):04X}"
+        return normalize_node_id(value)
 
     def _normalize_eui64(self, value: str | None) -> str | None:
         if not value:
@@ -707,8 +727,359 @@ class GatewayManager:
             pass
 
 
+
 manager = GatewayManager()
 zigbee_registry = ZigbeeDeviceRegistry()
+
+
+class ZeroCrossCalibrator:
+    TYPE_NAMES = {0x01: "on", 0x02: "off"}
+    COMMAND_BYTES = {"on": "FA", "off": "FB"}
+    ACTION_LABELS = {"on": "开灯", "off": "关灯"}
+
+    def __init__(self, gateway: GatewayManager) -> None:
+        self.gateway = gateway
+        self.lock = threading.RLock()
+        self.condition = threading.Condition(self.lock)
+        self.stop_event = threading.Event()
+        self.worker_thread: threading.Thread | None = None
+        self.reader_thread: threading.Thread | None = None
+        self.serial_fd: int | None = None
+        self.serial_buffer = bytearray()
+        self.frame_seq = 0
+        self.latest_measurements: dict[str, dict[str, Any] | None] = {"on": None, "off": None}
+        self.state: dict[str, Any] = self._idle_state()
+
+    def _idle_state(self) -> dict[str, Any]:
+        serial_port = resolve_runtime_serial_port(CALIBRATION_SERIAL_PORT)
+        return {
+            "active": False,
+            "serial_port": serial_port,
+            "configured_serial_port": CALIBRATION_SERIAL_PORT,
+            "serial_baud_rate": CALIBRATION_BAUD_RATE,
+            "serial_open": False,
+            "target_node": None,
+            "endpoint": "1",
+            "round": 0,
+            "max_rounds": ZERO_CROSS_MAX_ROUNDS,
+            "half_cycle_us": ZERO_CROSS_HALF_CYCLE_US,
+            "success_window_us": ZERO_CROSS_SUCCESS_WINDOW_US,
+            "last_on_measurement_us": None,
+            "last_off_measurement_us": None,
+            "last_on_status": None,
+            "last_off_status": None,
+            "last_on_calibration_us": None,
+            "last_off_calibration_us": None,
+            "consecutive_timeouts": 0,
+            "result": "idle",
+            "last_error": None,
+            "started_at": None,
+            "stopped_at": None,
+        }
+
+    def status(self) -> dict[str, Any]:
+        with self.lock:
+            status = dict(self.state)
+            status["serial_open"] = self.serial_fd is not None
+            return status
+
+    def start(self, payload: dict[str, Any]) -> dict[str, Any]:
+        node_id = normalize_node_id(str(payload.get("nodeId") or payload.get("node_id") or ""))
+        endpoint = str(payload.get("endpoint") or "1").strip() or "1"
+        if not node_id:
+            raise ValueError("nodeId is required")
+        if not endpoint.isdigit():
+            raise ValueError("endpoint must be a number")
+        if not self.gateway.running():
+            raise ValueError("gateway is not running")
+        serial_port = resolve_runtime_serial_port(
+            str(payload.get("serial_port") or CALIBRATION_SERIAL_PORT or "").strip()
+        )
+        if not serial_port:
+            raise ValueError("calibration serial port is not configured")
+        if not serial_port.startswith("/dev/"):
+            raise ValueError("calibration serial port must start with /dev/")
+
+        with self.lock:
+            if self.state.get("active"):
+                raise ValueError("zero-cross calibration is already running")
+            self.stop_event.clear()
+            self.serial_buffer = bytearray()
+            self.latest_measurements = {"on": None, "off": None}
+            self.frame_seq = 0
+            self.state = self._idle_state()
+            self.state.update(
+                {
+                    "active": True,
+                    "serial_port": serial_port,
+                    "target_node": node_id,
+                    "endpoint": endpoint,
+                    "result": "running",
+                    "started_at": now_iso(),
+                    "stopped_at": None,
+                }
+            )
+
+        try:
+            self._open_serial(serial_port)
+        except Exception as exc:
+            self._set_error(f"failed to open calibration serial {serial_port}: {exc}")
+            self._finish("error")
+            raise
+        self.reader_thread = threading.Thread(target=self._serial_read_loop, name="zero-cross-serial-reader", daemon=True)
+        self.reader_thread.start()
+        self.worker_thread = threading.Thread(target=self._worker_loop, name="zero-cross-calibrator", daemon=True)
+        self.worker_thread.start()
+        self._emit(f"[zerocross] 自动过零校准已启动: node={node_id} endpoint={endpoint} serial={serial_port}\n")
+        return self.status()
+
+    def stop(self, reason: str = "stopped") -> dict[str, Any]:
+        with self.lock:
+            was_active = bool(self.state.get("active"))
+        self.stop_event.set()
+        with self.condition:
+            self.condition.notify_all()
+        self._close_serial()
+        if was_active:
+            self._finish(reason)
+            self._emit(f"[zerocross] 自动过零校准已停止: {reason}\n")
+        return self.status()
+
+    def _open_serial(self, serial_port: str) -> None:
+        fd = os.open(serial_port, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            attrs = termios.tcgetattr(fd)
+            attrs[0] = 0
+            attrs[1] = 0
+            attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
+            attrs[3] = 0
+            attrs[4] = termios.B9600
+            attrs[5] = termios.B9600
+            attrs[6][termios.VMIN] = 0
+            attrs[6][termios.VTIME] = 1
+            termios.tcsetattr(fd, termios.TCSANOW, attrs)
+            termios.tcflush(fd, termios.TCIFLUSH)
+        except Exception:
+            os.close(fd)
+            raise
+        with self.lock:
+            self.serial_fd = fd
+            self.state["serial_open"] = True
+
+    def _close_serial(self) -> None:
+        with self.lock:
+            fd = self.serial_fd
+            self.serial_fd = None
+            self.state["serial_open"] = False
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    def _serial_read_loop(self) -> None:
+        try:
+            while not self.stop_event.is_set():
+                with self.lock:
+                    fd = self.serial_fd
+                if fd is None:
+                    return
+                try:
+                    readable, _, _ = select.select([fd], [], [], 0.2)
+                    if not readable:
+                        continue
+                    data = os.read(fd, 64)
+                except OSError as exc:
+                    if not self.stop_event.is_set():
+                        self._set_error(f"calibration serial read failed: {exc}")
+                    return
+                if data:
+                    self._parse_serial_bytes(data)
+        finally:
+            self._close_serial()
+
+    def _parse_serial_bytes(self, data: bytes) -> None:
+        invalid_frames: list[bytes] = []
+        records: list[tuple[str, int, bytes]] = []
+        with self.lock:
+            self.serial_buffer.extend(data)
+            while len(self.serial_buffer) >= 6:
+                header_at = self.serial_buffer.find(b"\x55\xAA")
+                if header_at < 0:
+                    del self.serial_buffer[:-1]
+                    break
+                if header_at > 0:
+                    del self.serial_buffer[:header_at]
+                if len(self.serial_buffer) < 6:
+                    break
+                frame = bytes(self.serial_buffer[:6])
+                del self.serial_buffer[:6]
+                parsed = self.parse_frame(frame)
+                if parsed is None:
+                    invalid_frames.append(frame)
+                    continue
+                records.append((parsed["kind"], parsed["value_us"], frame))
+        for frame in invalid_frames:
+            self._emit(f"[zerocross] 丢弃无效仪器帧: {frame.hex(' ').upper()}\n")
+        for kind, value_us, frame in records:
+            self._record_measurement(kind, value_us, frame)
+
+    @classmethod
+    def parse_frame(cls, frame: bytes) -> dict[str, Any] | None:
+        if len(frame) != 6 or frame[0] != 0x55 or frame[1] != 0xAA:
+            return None
+        frame_type = frame[2]
+        kind = cls.TYPE_NAMES.get(frame_type)
+        if not kind:
+            return None
+        expected_checksum = (frame[3] + frame[4] + frame_type - 1) & 0xFF
+        if frame[5] != expected_checksum:
+            return None
+        return {
+            "kind": kind,
+            "frame_type": frame_type,
+            "value_us": (frame[3] << 8) | frame[4],
+        }
+
+    def _record_measurement(self, kind: str, value_us: int, frame: bytes) -> None:
+        with self.condition:
+            self.frame_seq += 1
+            record = {
+                "seq": self.frame_seq,
+                "kind": kind,
+                "value_us": value_us,
+                "frame": frame.hex(" ").upper(),
+                "ts": now_iso(),
+            }
+            self.latest_measurements[kind] = record
+            self.state[f"last_{kind}_measurement_us"] = value_us
+            self.condition.notify_all()
+        self._emit(f"[zerocross] 仪器测量: {self.ACTION_LABELS[kind]} {value_us}us ({record['frame']})\n")
+
+    def _worker_loop(self) -> None:
+        final_result = "stopped"
+        try:
+            with self.lock:
+                node_id = self.state["target_node"]
+                endpoint = self.state["endpoint"]
+                max_rounds = int(self.state["max_rounds"])
+            for round_no in range(1, max_rounds + 1):
+                if self.stop_event.is_set():
+                    final_result = "stopped"
+                    break
+                with self.lock:
+                    self.state["round"] = round_no
+                    self.state["last_on_status"] = None
+                    self.state["last_off_status"] = None
+                self._emit(f"[zerocross] 第 {round_no} 轮开始\n")
+                on_ok = self._run_edge("on", node_id, endpoint)
+                if self.stop_event.is_set():
+                    final_result = "stopped"
+                    break
+                if not self._wait_or_stop(ZERO_CROSS_SWITCH_INTERVAL_SECONDS):
+                    final_result = "stopped"
+                    break
+                off_ok = self._run_edge("off", node_id, endpoint)
+                if self.stop_event.is_set():
+                    final_result = "stopped"
+                    break
+                if on_ok and off_ok:
+                    final_result = "success"
+                    self._emit(f"[zerocross] 第 {round_no} 轮开/关过零均已达标，自动校准完成\n")
+                    break
+                with self.lock:
+                    if self.state["consecutive_timeouts"] >= ZERO_CROSS_MAX_CONSECUTIVE_TIMEOUTS:
+                        final_result = "timeout"
+                        self._emit("[zerocross] 连续测量超时过多，自动校准停止\n")
+                        break
+                if not self._wait_or_stop(ZERO_CROSS_CALIBRATION_SETTLE_SECONDS):
+                    final_result = "stopped"
+                    break
+            else:
+                final_result = "max-rounds"
+                self._emit(f"[zerocross] 已达到最大轮数 {max_rounds}，自动校准停止\n")
+        except Exception as exc:
+            final_result = "error"
+            self._set_error(str(exc))
+            traceback.print_exc()
+        finally:
+            self.stop_event.set()
+            self._close_serial()
+            self._finish(final_result)
+
+    def _run_edge(self, kind: str, node_id: str, endpoint: str) -> bool:
+        action = "on" if kind == "on" else "off"
+        label = self.ACTION_LABELS[kind]
+        with self.lock:
+            baseline_seq = self.frame_seq
+        self._emit(f"[zerocross] {label}: 发送开关命令\n")
+        self.gateway.send_command(f"zcl on-off {action}")
+        self.gateway.send_command(f"send {node_id} {endpoint} {endpoint}")
+        measurement = self._wait_for_measurement(kind, baseline_seq)
+        if measurement is None:
+            with self.lock:
+                self.state[f"last_{kind}_status"] = "timeout"
+                self.state["consecutive_timeouts"] += 1
+            self._emit(f"[zerocross] {label}: 等待仪器测量超时\n")
+            return False
+
+        value_us = int(measurement["value_us"])
+        with self.lock:
+            self.state["consecutive_timeouts"] = 0
+        if value_us <= ZERO_CROSS_SUCCESS_WINDOW_US:
+            with self.lock:
+                self.state[f"last_{kind}_status"] = "success"
+            self._emit(f"[zerocross] {label}: {value_us}us <= {ZERO_CROSS_SUCCESS_WINDOW_US}us，达标\n")
+            return True
+
+        calibration_us = max(0, min(0xFFFF, ZERO_CROSS_HALF_CYCLE_US - value_us))
+        with self.lock:
+            self.state[f"last_{kind}_status"] = "adjusted"
+            self.state[f"last_{kind}_calibration_us"] = calibration_us
+        bytes_text = uint16_hex_bytes(calibration_us)
+        command_byte = self.COMMAND_BYTES[kind]
+        self._emit(
+            f"[zerocross] {label}: {value_us}us 未达标，下发补偿 {calibration_us}us ({bytes_text})\n"
+        )
+        self.gateway.send_command(f"raw 0xEEEE {{11 01 {command_byte} {bytes_text}}}")
+        self.gateway.send_command(f"send {node_id} {endpoint} {endpoint}")
+        return False
+
+    def _wait_for_measurement(self, kind: str, baseline_seq: int) -> dict[str, Any] | None:
+        deadline = time.monotonic() + ZERO_CROSS_MEASUREMENT_TIMEOUT_SECONDS
+        with self.condition:
+            while not self.stop_event.is_set():
+                record = self.latest_measurements.get(kind)
+                if record and int(record.get("seq", 0)) > baseline_seq:
+                    return dict(record)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                self.condition.wait(timeout=min(0.2, remaining))
+        return None
+
+    def _wait_or_stop(self, seconds: float) -> bool:
+        return not self.stop_event.wait(seconds)
+
+    def _finish(self, result: str) -> None:
+        with self.lock:
+            if not self.state.get("active") and self.state.get("result") != "running":
+                return
+            self.state["active"] = False
+            self.state["result"] = result
+            self.state["stopped_at"] = now_iso()
+            self.state["serial_open"] = self.serial_fd is not None
+
+    def _set_error(self, message: str) -> None:
+        with self.lock:
+            self.state["last_error"] = message
+        self._emit(f"[zerocross] ERROR: {message}\n")
+
+    def _emit(self, text: str) -> None:
+        self.gateway._emit(text, "system")
+
+
+zero_cross_calibrator = ZeroCrossCalibrator(manager)
 
 
 def list_serial_devices() -> list[dict[str, str]]:
@@ -818,6 +1189,8 @@ class RequestHandler(BaseHTTPRequestHandler):
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
         if path == "/api/status":
             self.send_json(manager.status())
+        elif path == "/api/zerocross/status":
+            self.send_json(zero_cross_calibrator.status())
         elif path == "/api/devices":
             self.send_json({"devices": list_serial_devices()})
         elif path == "/api/zigbee/devices":
@@ -838,7 +1211,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         if path == "/api/start":
             self.send_json(manager.start(payload))
         elif path == "/api/stop":
+            zero_cross_calibrator.stop("gateway-stop")
             self.send_json(manager.stop())
+        elif path == "/api/zerocross/start":
+            self.send_json(zero_cross_calibrator.start(payload))
+        elif path == "/api/zerocross/stop":
+            self.send_json(zero_cross_calibrator.stop("user-stop"))
         elif path == "/api/send":
             self.send_json(manager.send_command(str(payload.get("command") or "")))
         elif path == "/api/zigbee/devices/reparse":
@@ -929,10 +1307,12 @@ def main() -> None:
     print(f"Default executable: {DEFAULT_EXECUTABLE}")
     print(f"Configured serial: {CONFIGURED_SERIAL_PORT or '-'}")
     print(f"Default serial: {DEFAULT_SERIAL_PORT or '-'}")
+    print(f"Calibration serial: {CALIBRATION_SERIAL_PORT or '-'}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping server...")
+        zero_cross_calibrator.stop("server-stop")
         manager.stop()
         server.server_close()
 

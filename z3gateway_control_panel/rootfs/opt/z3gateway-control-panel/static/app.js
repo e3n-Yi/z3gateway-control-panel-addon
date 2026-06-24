@@ -11,6 +11,7 @@ const state = {
   status: null,
   commands: null,
   zigbeeDevices: [],
+  zeroCrossStatus: null,
   zigbeeDeviceSignature: "",
   zigbeeDeviceChoiceSignature: "",
   commandDeviceRenderPending: false,
@@ -116,6 +117,7 @@ async function refreshStatus() {
   if (!state.browserPath) state.browserPath = state.status.allowed_root || state.status.gateway_root || "/";
   if (!$("executable").value) setInputValue("executable", state.status.executable);
   if (!$("serial-port").value) setInputValue("serial-port", state.status.serial_port || state.status.configured_serial_port || "");
+  updateZeroCrossPanel();
   if (!$("network-index").value) setInputValue("network-index", state.status.network_index || "1");
   if (!$("baud-rate").value) setInputValue("baud-rate", state.status.baud_rate || "115200");
 }
@@ -237,6 +239,12 @@ function renderPendingCommandDevicesIfIdle() {
   if (!state.commandDeviceRenderPending || isEditingCommandForm()) return;
   state.commandDeviceRenderPending = false;
   renderSelectedCommand();
+}
+
+async function refreshZeroCrossStatus() {
+  state.zeroCrossStatus = await api("/api/zerocross/status");
+  updateZeroCrossPanel();
+  return state.zeroCrossStatus;
 }
 
 async function loadZigbeeDevices({ reparse = false } = {}) {
@@ -647,6 +655,8 @@ function renderDeviceDetail(device) {
   calibrationGrid.appendChild(renderCalibrationControl(device, "on", "开灯时间 us", "zeroCrossOnUs", "FA"));
   calibrationGrid.appendChild(renderCalibrationControl(device, "off", "关灯时间 us", "zeroCrossOffUs", "FB"));
   form.appendChild(calibrationGrid);
+  form.appendChild(renderAutoZeroCrossControl(device));
+  updateZeroCrossPanel();
 
   const refreshButton = document.createElement("button");
   refreshButton.type = "button";
@@ -707,6 +717,155 @@ function renderCalibrationControl(device, kind, label, paramKey, commandByte) {
 
   box.append(field, button);
   return box;
+}
+
+function renderAutoZeroCrossControl(device) {
+  const box = document.createElement("div");
+  box.className = "auto-zero-cross-card";
+
+  const header = document.createElement("div");
+  header.className = "auto-zero-cross-header";
+  const title = document.createElement("strong");
+  title.textContent = "自动过零校准";
+  const stateNode = document.createElement("span");
+  stateNode.id = "zc-result";
+  stateNode.className = "zc-result";
+  stateNode.textContent = "未启动";
+  header.append(title, stateNode);
+
+  const serial = document.createElement("p");
+  serial.id = "zc-serial";
+  serial.className = "muted";
+  serial.textContent = "仪器串口：读取中";
+
+  const metrics = document.createElement("div");
+  metrics.className = "auto-zero-cross-metrics";
+  [
+    ["轮次", "zc-round"],
+    ["开灯测量", "zc-on-measurement"],
+    ["开灯补偿", "zc-on-calibration"],
+    ["开灯状态", "zc-on-status"],
+    ["关灯测量", "zc-off-measurement"],
+    ["关灯补偿", "zc-off-calibration"],
+    ["关灯状态", "zc-off-status"],
+    ["超时", "zc-timeouts"],
+  ].forEach(([label, id]) => {
+    const row = document.createElement("div");
+    const key = document.createElement("span");
+    key.textContent = label;
+    const value = document.createElement("code");
+    value.id = id;
+    value.textContent = "-";
+    row.append(key, value);
+    metrics.appendChild(row);
+  });
+
+  const error = document.createElement("p");
+  error.id = "zc-error";
+  error.className = "muted warning-text hidden-line";
+
+  const actions = document.createElement("div");
+  actions.className = "device-action-grid two";
+  const start = document.createElement("button");
+  start.id = "zc-start";
+  start.type = "button";
+  start.className = "primary";
+  start.textContent = "开始自动校准";
+  start.addEventListener("click", () => startAutoZeroCross(device).catch((err) => toast(err.message)));
+  const stop = document.createElement("button");
+  stop.id = "zc-stop";
+  stop.type = "button";
+  stop.className = "danger";
+  stop.textContent = "停止校准";
+  stop.addEventListener("click", () => stopAutoZeroCross().catch((err) => toast(err.message)));
+  actions.append(start, stop);
+
+  box.append(header, serial, metrics, error, actions);
+  return box;
+}
+
+function formatUs(value) {
+  return value === null || value === undefined ? "-" : `${value} us`;
+}
+
+function zeroCrossResultLabel(result, active) {
+  if (active) return "运行中";
+  const labels = {
+    idle: "未启动",
+    success: "已完成",
+    stopped: "已停止",
+    "user-stop": "已停止",
+    "gateway-stop": "已停止",
+    "server-stop": "已停止",
+    timeout: "超时停止",
+    "max-rounds": "达到轮数上限",
+    error: "错误",
+  };
+  return labels[result] || result || "未启动";
+}
+
+function zeroCrossStatusLabel(status) {
+  const labels = {
+    success: "达标",
+    adjusted: "已补偿",
+    timeout: "超时",
+  };
+  return labels[status] || status || "-";
+}
+
+function updateZeroCrossPanel() {
+  const resultNode = $("zc-result");
+  if (!resultNode) return;
+  const zc = state.zeroCrossStatus || {};
+  const device = selectedDevice();
+  const active = Boolean(zc.active);
+  resultNode.textContent = zeroCrossResultLabel(zc.result, active);
+  resultNode.className = ["zc-result", active ? "active" : "", zc.result === "success" ? "success" : "", zc.result === "error" || zc.result === "timeout" ? "danger" : ""].filter(Boolean).join(" ");
+
+  const serialText = zc.serial_port || zc.configured_serial_port || "未配置";
+  $("zc-serial").textContent = `仪器串口：${serialText} · ${zc.serial_open ? "已打开" : "未打开"} · ${zc.serial_baud_rate || 9600} baud`;
+  $("zc-round").textContent = `${zc.round || 0} / ${zc.max_rounds || 20}`;
+  $("zc-on-measurement").textContent = formatUs(zc.last_on_measurement_us);
+  $("zc-off-measurement").textContent = formatUs(zc.last_off_measurement_us);
+  $("zc-on-calibration").textContent = formatUs(zc.last_on_calibration_us);
+  $("zc-off-calibration").textContent = formatUs(zc.last_off_calibration_us);
+  $("zc-on-status").textContent = zeroCrossStatusLabel(zc.last_on_status);
+  $("zc-off-status").textContent = zeroCrossStatusLabel(zc.last_off_status);
+  $("zc-timeouts").textContent = String(zc.consecutive_timeouts || 0);
+  const error = $("zc-error");
+  error.textContent = zc.last_error ? `错误：${zc.last_error}` : "";
+  error.classList.toggle("hidden-line", !zc.last_error);
+
+  const canStart = state.status?.running && canOperateDevice(device) && !active;
+  const startButton = $("zc-start");
+  const stopButton = $("zc-stop");
+  if (startButton) startButton.disabled = !canStart;
+  if (stopButton) stopButton.disabled = !active;
+}
+
+async function startAutoZeroCross(device) {
+  if (!state.status?.running) {
+    toast("gateway 未运行，不能自动校准");
+    return;
+  }
+  if (!canOperateDevice(device)) {
+    toast("当前设备缺少短地址，不能自动校准");
+    return;
+  }
+  const endpoint = endpointForDevice(device);
+  state.zeroCrossStatus = await api("/api/zerocross/start", {
+    method: "POST",
+    body: JSON.stringify({ nodeId: device.nodeId, endpoint }),
+  });
+  $("command-preview").value = `自动过零校准\nnode ${device.nodeId}\nendpoint ${endpoint}`;
+  updateZeroCrossPanel();
+  toast("自动过零校准已启动");
+}
+
+async function stopAutoZeroCross() {
+  state.zeroCrossStatus = await api("/api/zerocross/stop", { method: "POST", body: JSON.stringify({}) });
+  updateZeroCrossPanel();
+  toast("自动过零校准已停止");
 }
 
 function renderSelectedCommand() {
@@ -937,6 +1096,9 @@ function connectLogs() {
       if (payload.kind === "output" && mayContainZigbeeDeviceChange(text)) {
         scheduleZigbeeDeviceRefresh();
       }
+      if (payload.kind === "system" && text.includes("[zerocross]")) {
+        refreshZeroCrossStatus().catch(() => {});
+      }
     } catch {
       appendLog(event.data);
     }
@@ -1013,13 +1175,14 @@ async function init() {
   loadCommandDrawerPinned();
   loadDeviceEndpoints();
   wireEvents();
-  await Promise.all([refreshStatus(), refreshDevices(), loadCommands(), loadZigbeeDevices()]);
+  await Promise.all([refreshStatus(), refreshDevices(), loadCommands(), loadZigbeeDevices(), refreshZeroCrossStatus()]);
   if (state.status.default_executable) {
     $("executable").value = state.status.default_executable;
   }
   await browse(state.status.allowed_root);
   connectLogs();
   setInterval(() => refreshStatus().catch(() => {}), 3000);
+  setInterval(() => refreshZeroCrossStatus().catch(() => {}), 1500);
 }
 
 init().catch((err) => toast(err.message));

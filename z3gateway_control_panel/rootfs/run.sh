@@ -31,6 +31,19 @@ if [ -n "$CONFIGURED_SERIAL_PORT" ] && [ -e "$CONFIGURED_SERIAL_PORT" ]; then
     printf '[z3gateway-control-panel] warning: failed to create /dev/z3gw alias for %s\n' "$CONFIGURED_SERIAL_PORT"
   fi
 fi
+CONFIGURED_CALIBRATION_SERIAL_PORT="$(option calibration_serial_port "")"
+CALIBRATION_SERIAL_PORT="$CONFIGURED_CALIBRATION_SERIAL_PORT"
+if [ -n "$CONFIGURED_CALIBRATION_SERIAL_PORT" ]; then
+  if [ -e "$CONFIGURED_CALIBRATION_SERIAL_PORT" ]; then
+    if ln -sfn "$CONFIGURED_CALIBRATION_SERIAL_PORT" /dev/z3zc; then
+      CALIBRATION_SERIAL_PORT=/dev/z3zc
+    else
+      printf '[z3gateway-control-panel] warning: failed to create /dev/z3zc alias for %s\n' "$CONFIGURED_CALIBRATION_SERIAL_PORT"
+    fi
+  else
+    printf '[z3gateway-control-panel] warning: calibration_serial_port does not exist: %s\n' "$CONFIGURED_CALIBRATION_SERIAL_PORT"
+  fi
+fi
 NETWORK_INDEX="$(option network_index 1)"
 BAUD_RATE="$(option baud_rate 115200)"
 
@@ -44,12 +57,14 @@ export Z3_PANEL_CONFIGURED_SERIAL_PORT="$CONFIGURED_SERIAL_PORT"
 export Z3_PANEL_DEFAULT_SERIAL_PORT="$SERIAL_PORT"
 export Z3_PANEL_DEFAULT_NETWORK_INDEX="$NETWORK_INDEX"
 export Z3_PANEL_DEFAULT_BAUD_RATE="$BAUD_RATE"
+export Z3_PANEL_CALIBRATION_SERIAL_PORT="$CALIBRATION_SERIAL_PORT"
 export PYTHONUNBUFFERED=1
 
 mkdir -p /data/logs
 
 printf '[z3gateway-control-panel] configured_serial_port=%s\n' "$CONFIGURED_SERIAL_PORT"
 printf '[z3gateway-control-panel] runtime_serial_port=%s\n' "$SERIAL_PORT"
+printf '[z3gateway-control-panel] calibration_serial_port=%s\n' "${CALIBRATION_SERIAL_PORT:-}"
 printf '[z3gateway-control-panel] network_index=%s baud_rate=%s\n' "$NETWORK_INDEX" "$BAUD_RATE"
 printf '[z3gateway-control-panel] executable=%s\n' "$Z3_PANEL_DEFAULT_EXECUTABLE"
 printf '[z3gateway-control-panel] data_dir=%s\n' "$Z3_PANEL_DATA_DIR"
