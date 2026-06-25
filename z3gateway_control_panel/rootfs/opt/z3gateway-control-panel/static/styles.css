@@ -727,6 +727,45 @@ textarea {
   font-size: 12px;
 }
 
+.zc-raw-panel {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #263545;
+  border-radius: 6px;
+  background: var(--code);
+  padding: 8px;
+}
+
+.zc-raw-panel.hidden-line {
+  display: none;
+}
+
+.zc-raw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--code-text);
+  font-size: 12px;
+}
+
+.zc-raw-header span {
+  color: #9fb1c4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.zc-raw-log {
+  min-height: 92px;
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  color: var(--code-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 .hidden-line {
   display: none;
 }

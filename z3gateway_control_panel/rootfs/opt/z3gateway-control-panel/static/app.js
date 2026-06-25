@@ -764,6 +764,23 @@ function renderAutoZeroCrossControl(device) {
   error.id = "zc-error";
   error.className = "muted warning-text hidden-line";
 
+  const rawPanel = document.createElement("div");
+  rawPanel.id = "zc-raw-panel";
+  rawPanel.className = "zc-raw-panel hidden-line";
+  const rawHeader = document.createElement("div");
+  rawHeader.className = "zc-raw-header";
+  const rawTitle = document.createElement("strong");
+  rawTitle.textContent = "仪器原始串口";
+  const rawCount = document.createElement("span");
+  rawCount.id = "zc-raw-count";
+  rawCount.textContent = "0 帧";
+  rawHeader.append(rawTitle, rawCount);
+  const rawLog = document.createElement("pre");
+  rawLog.id = "zc-raw-log";
+  rawLog.className = "zc-raw-log";
+  rawLog.textContent = "等待仪器数据";
+  rawPanel.append(rawHeader, rawLog);
+
   const actions = document.createElement("div");
   actions.className = "device-action-grid two";
   const start = document.createElement("button");
@@ -780,7 +797,7 @@ function renderAutoZeroCrossControl(device) {
   stop.addEventListener("click", () => stopAutoZeroCross().catch((err) => toast(err.message)));
   actions.append(start, stop);
 
-  box.append(header, serial, metrics, error, actions);
+  box.append(header, serial, metrics, error, rawPanel, actions);
   return box;
 }
 
@@ -813,6 +830,12 @@ function zeroCrossStatusLabel(status) {
   return labels[status] || status || "-";
 }
 
+function formatZeroCrossRawFrame(frame) {
+  if (!frame || !frame.frame) return "";
+  const timeText = frame.ts ? frame.ts.slice(11, 19) : "--:--:--";
+  return `${timeText}  ${frame.frame}`;
+}
+
 function updateZeroCrossPanel() {
   const resultNode = $("zc-result");
   if (!resultNode) return;
@@ -835,6 +858,19 @@ function updateZeroCrossPanel() {
   const error = $("zc-error");
   error.textContent = zc.last_error ? `错误：${zc.last_error}` : "";
   error.classList.toggle("hidden-line", !zc.last_error);
+
+  const rawFrames = Array.isArray(zc.raw_frames) ? zc.raw_frames : [];
+  const rawPanel = $("zc-raw-panel");
+  const rawLog = $("zc-raw-log");
+  const rawCount = $("zc-raw-count");
+  if (rawPanel && rawLog && rawCount) {
+    rawPanel.classList.toggle("hidden-line", !active);
+    rawCount.textContent = `${rawFrames.length} 帧`;
+    rawLog.textContent = rawFrames.length
+      ? rawFrames.map(formatZeroCrossRawFrame).filter(Boolean).join("\n")
+      : "等待仪器数据";
+    if (active) rawLog.scrollTop = rawLog.scrollHeight;
+  }
 
   const canStart = state.status?.running && canOperateDevice(device) && !active;
   const startButton = $("zc-start");

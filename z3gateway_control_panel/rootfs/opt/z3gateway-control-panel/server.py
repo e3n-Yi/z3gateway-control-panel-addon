@@ -82,9 +82,10 @@ ZERO_CROSS_HALF_CYCLE_US = 10000
 ZERO_CROSS_SUCCESS_WINDOW_US = 500
 ZERO_CROSS_MAX_ROUNDS = 20
 ZERO_CROSS_MEASUREMENT_TIMEOUT_SECONDS = 8.0
-ZERO_CROSS_SWITCH_INTERVAL_SECONDS = 3.0
-ZERO_CROSS_CALIBRATION_SETTLE_SECONDS = 2.0
+ZERO_CROSS_SWITCH_INTERVAL_SECONDS = 5.0
+ZERO_CROSS_CALIBRATION_SETTLE_SECONDS = 5.0
 ZERO_CROSS_MAX_CONSECUTIVE_TIMEOUTS = 3
+ZERO_CROSS_RAW_FRAME_LIMIT = 120
 
 
 def now_iso() -> str:
@@ -818,6 +819,7 @@ class ZeroCrossCalibrator:
         self.serial_fd: int | None = None
         self.serial_buffer = bytearray()
         self.frame_seq = 0
+        self.raw_frames: deque[dict[str, Any]] = deque(maxlen=ZERO_CROSS_RAW_FRAME_LIMIT)
         self.latest_measurements: dict[str, dict[str, Any] | None] = {"on": None, "off": None}
         self.state: dict[str, Any] = self._idle_state()
 
@@ -835,6 +837,9 @@ class ZeroCrossCalibrator:
             "max_rounds": ZERO_CROSS_MAX_ROUNDS,
             "half_cycle_us": ZERO_CROSS_HALF_CYCLE_US,
             "success_window_us": ZERO_CROSS_SUCCESS_WINDOW_US,
+            "switch_interval_seconds": ZERO_CROSS_SWITCH_INTERVAL_SECONDS,
+            "round_interval_seconds": ZERO_CROSS_CALIBRATION_SETTLE_SECONDS,
+            "raw_frames": [],
             "last_on_measurement_us": None,
             "last_off_measurement_us": None,
             "last_on_status": None,
@@ -852,6 +857,7 @@ class ZeroCrossCalibrator:
         with self.lock:
             status = dict(self.state)
             status["serial_open"] = self.serial_fd is not None
+            status["raw_frames"] = list(self.raw_frames)
             return status
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -878,6 +884,7 @@ class ZeroCrossCalibrator:
             self.serial_buffer = bytearray()
             self.latest_measurements = {"on": None, "off": None}
             self.frame_seq = 0
+            self.raw_frames.clear()
             self.state = self._idle_state()
             self.state.update(
                 {
@@ -991,6 +998,7 @@ class ZeroCrossCalibrator:
                     continue
                 records.append((parsed["kind"], parsed["value_us"], frame))
         for frame in invalid_frames:
+            self._remember_raw_frame(frame, "invalid")
             self._emit(f"[zerocross] 丢弃无效仪器帧: {frame.hex(' ').upper()}\n")
         for kind, value_us, frame in records:
             self._record_measurement(kind, value_us, frame)
@@ -1023,9 +1031,19 @@ class ZeroCrossCalibrator:
                 "ts": now_iso(),
             }
             self.latest_measurements[kind] = record
+            self._remember_raw_frame_locked(record["frame"], "valid", record["ts"])
             self.state[f"last_{kind}_measurement_us"] = value_us
             self.condition.notify_all()
         self._emit(f"[zerocross] 仪器测量: {self.ACTION_LABELS[kind]} {value_us}us ({record['frame']})\n")
+
+    def _remember_raw_frame(self, frame: bytes, status: str) -> None:
+        with self.lock:
+            self._remember_raw_frame_locked(frame.hex(" ").upper(), status, now_iso())
+
+    def _remember_raw_frame_locked(self, frame_text: str, status: str, ts: str) -> None:
+        record = {"ts": ts, "frame": frame_text, "status": status}
+        self.raw_frames.append(record)
+        self.state["raw_frames"] = list(self.raw_frames)
 
     def _worker_loop(self) -> None:
         final_result = "stopped"
