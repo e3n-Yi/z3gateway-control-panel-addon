@@ -43,6 +43,9 @@ INFO_START_DELAY_SECONDS = 1.2
 NEIGHBOR_TABLE_COMMAND = "plugin stack-diagnostics neighbor-table"
 NEIGHBOR_TABLE_JOIN_DELAY_SECONDS = 2.0
 NEIGHBOR_TABLE_COOLDOWN_SECONDS = 5.0
+GATEWAY_PROMPT = "zigbee_z3_gateway>"
+GATEWAY_COMMAND_SEQUENCE_DELAY_SECONDS = float(os.environ.get("Z3_PANEL_COMMAND_SEQUENCE_DELAY_SECONDS", "0.6"))
+GATEWAY_COMMAND_PROMPT_TIMEOUT_SECONDS = float(os.environ.get("Z3_PANEL_COMMAND_PROMPT_TIMEOUT_SECONDS", "1.2"))
 
 def resolve_gateway_root() -> Path:
     env_root = os.environ.get("Z3_PANEL_GATEWAY_ROOT")
@@ -427,6 +430,10 @@ class ZigbeeDeviceRegistry:
 class GatewayManager:
     def __init__(self) -> None:
         self.lock = threading.RLock()
+        self.command_lock = threading.RLock()
+        self.prompt_condition = threading.Condition()
+        self.prompt_seq = 0
+        self.output_tail = ""
         self.proc: subprocess.Popen[bytes] | None = None
         self.master_fd: int | None = None
         self.reader_thread: threading.Thread | None = None
@@ -505,6 +512,9 @@ class GatewayManager:
             session_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
             self.session_log = LOG_DIR / f"gateway-{session_id}.log"
             self.history.clear()
+            with self.prompt_condition:
+                self.prompt_seq = 0
+                self.output_tail = ""
             self.last_exit_code = None
             if self.gateway_info_timer is not None:
                 self.gateway_info_timer.cancel()
@@ -594,11 +604,59 @@ class GatewayManager:
         command = command.rstrip("\r\n")
         if not command:
             raise ValueError("command is empty")
+        lines = [line.strip() for line in command.splitlines() if line.strip()]
+        if not lines:
+            raise ValueError("command is empty")
+        if len(lines) > 1:
+            return self.send_command_sequence(lines)
+        with self.command_lock:
+            self._send_single_command(lines[0], "send", {})
+        return {"ok": True}
+
+    def send_command_sequence(
+        self,
+        commands: list[str],
+        *,
+        inter_command_delay: float = GATEWAY_COMMAND_SEQUENCE_DELAY_SECONDS,
+        prompt_timeout: float = GATEWAY_COMMAND_PROMPT_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        lines = [line.strip() for line in commands if line and line.strip()]
+        if not lines:
+            raise ValueError("command is empty")
+        with self.command_lock:
+            total = len(lines)
+            for index, line in enumerate(lines, start=1):
+                baseline_prompt_seq = self._prompt_seq()
+                self._send_single_command(
+                    line,
+                    "send",
+                    {"sequence_index": index, "sequence_total": total} if total > 1 else {},
+                )
+                if index < total:
+                    self._wait_for_prompt_after(baseline_prompt_seq, prompt_timeout)
+                    if inter_command_delay > 0:
+                        time.sleep(inter_command_delay)
+        return {"ok": True}
+
+    def _send_single_command(self, command: str, action: str, extra: dict[str, Any]) -> None:
         with self.lock:
             if not self.running() or self.master_fd is None:
                 raise ValueError("gateway is not running")
-            self._send_command_locked(command, "send", {})
-            return {"ok": True}
+            self._send_command_locked(command, action, extra)
+
+    def _prompt_seq(self) -> int:
+        with self.prompt_condition:
+            return self.prompt_seq
+
+    def _wait_for_prompt_after(self, baseline_prompt_seq: int, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        with self.prompt_condition:
+            while self.prompt_seq <= baseline_prompt_seq:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self.prompt_condition.wait(timeout=min(0.1, remaining))
+        return True
 
     def schedule_gateway_info_refresh(self, reason: str) -> None:
         with self.lock:
@@ -611,11 +669,12 @@ class GatewayManager:
             self.gateway_info_timer.start()
 
     def _send_auto_gateway_info(self, reason: str) -> None:
-        with self.lock:
-            self.gateway_info_timer = None
-            if not self.running() or self.master_fd is None:
-                return
-            self._send_command_locked(INFO_COMMAND, "auto-send", {"reason": reason})
+        with self.command_lock:
+            with self.lock:
+                self.gateway_info_timer = None
+                if not self.running() or self.master_fd is None:
+                    return
+                self._send_command_locked(INFO_COMMAND, "auto-send", {"reason": reason})
 
     def schedule_neighbor_table_refresh(self, reason: str) -> None:
         with self.lock:
@@ -632,18 +691,19 @@ class GatewayManager:
             self.neighbor_table_timer.start()
 
     def _send_auto_neighbor_table(self) -> None:
-        with self.lock:
-            self.neighbor_table_timer = None
-            reason = self.pending_neighbor_table_reason or "device-join"
-            self.pending_neighbor_table_reason = None
-            if not self.running() or self.master_fd is None:
-                return
-            self._send_command_locked(
-                NEIGHBOR_TABLE_COMMAND,
-                "auto-send",
-                {"reason": reason},
-            )
-            self.last_neighbor_table_at = time.monotonic()
+        with self.command_lock:
+            with self.lock:
+                self.neighbor_table_timer = None
+                reason = self.pending_neighbor_table_reason or "device-join"
+                self.pending_neighbor_table_reason = None
+                if not self.running() or self.master_fd is None:
+                    return
+                self._send_command_locked(
+                    NEIGHBOR_TABLE_COMMAND,
+                    "auto-send",
+                    {"reason": reason},
+                )
+                self.last_neighbor_table_at = time.monotonic()
 
     def _send_command_locked(self, command: str, action: str, extra: dict[str, Any]) -> None:
         if self.master_fd is None:
@@ -694,6 +754,8 @@ class GatewayManager:
 
     def _emit(self, text: str, kind: str) -> None:
         event = {"ts": now_iso(), "kind": kind, "text": text}
+        if kind == "output":
+            self._track_gateway_prompt(text)
         with self.lock:
             self.history.append(event)
             if self.session_log is not None:
@@ -716,6 +778,15 @@ class GatewayManager:
                 q.put_nowait(event)
             except queue.Full:
                 pass
+
+    def _track_gateway_prompt(self, text: str) -> None:
+        combined = self.output_tail + text
+        prompt_count = combined.count(GATEWAY_PROMPT)
+        self.output_tail = combined[-max(1, len(GATEWAY_PROMPT) - 1):]
+        if prompt_count:
+            with self.prompt_condition:
+                self.prompt_seq += prompt_count
+                self.prompt_condition.notify_all()
 
     def _write_operation(self, action: str, payload: dict[str, Any]) -> None:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1013,8 +1084,10 @@ class ZeroCrossCalibrator:
         with self.lock:
             baseline_seq = self.frame_seq
         self._emit(f"[zerocross] {label}: 发送开关命令\n")
-        self.gateway.send_command(f"zcl on-off {action}")
-        self.gateway.send_command(f"send {node_id} {endpoint} {endpoint}")
+        self.gateway.send_command_sequence([
+            f"zcl on-off {action}",
+            f"send {node_id} {endpoint} {endpoint}",
+        ])
         measurement = self._wait_for_measurement(kind, baseline_seq)
         if measurement is None:
             with self.lock:
@@ -1041,8 +1114,10 @@ class ZeroCrossCalibrator:
         self._emit(
             f"[zerocross] {label}: {value_us}us 未达标，下发补偿 {calibration_us}us ({bytes_text})\n"
         )
-        self.gateway.send_command(f"raw 0xEEEE {{11 01 {command_byte} {bytes_text}}}")
-        self.gateway.send_command(f"send {node_id} {endpoint} {endpoint}")
+        self.gateway.send_command_sequence([
+            f"raw 0xEEEE {{11 01 {command_byte} {bytes_text}}}",
+            f"send {node_id} {endpoint} {endpoint}",
+        ])
         return False
 
     def _wait_for_measurement(self, kind: str, baseline_seq: int) -> dict[str, Any] | None:
