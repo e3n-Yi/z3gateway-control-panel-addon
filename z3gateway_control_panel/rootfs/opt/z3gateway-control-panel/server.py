@@ -1144,10 +1144,14 @@ class ZeroCrossCalibrator:
         value_us = int(measurement["value_us"])
         with self.lock:
             self.state["consecutive_timeouts"] = 0
-        if value_us <= success_window_us:
+        upper_success_threshold = max(0, ZERO_CROSS_HALF_CYCLE_US - success_window_us)
+        if value_us <= success_window_us or value_us >= upper_success_threshold:
             with self.lock:
                 self.state[f"last_{kind}_status"] = "success"
-            self._emit(f"[zerocross] {label}: {value_us}us <= {success_window_us}us，达标\n")
+            self._emit(
+                f"[zerocross] {label}: {value_us}us 位于通过范围 "
+                f"(<= {success_window_us}us 或 >= {upper_success_threshold}us)，达标\n"
+            )
             return True
 
         calibration_us = max(0, min(0xFFFF, ZERO_CROSS_HALF_CYCLE_US - value_us))

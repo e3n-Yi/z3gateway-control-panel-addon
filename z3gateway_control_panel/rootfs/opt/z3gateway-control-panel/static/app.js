@@ -747,10 +747,11 @@ function renderCalibrationControl(device, kind, label, paramKey, commandByte) {
 }
 
 function renderAutoZeroCrossControl(device) {
-  const box = document.createElement("div");
+  const box = document.createElement("details");
+  box.id = "auto-zero-cross-card";
   box.className = "auto-zero-cross-card";
 
-  const header = document.createElement("div");
+  const header = document.createElement("summary");
   header.className = "auto-zero-cross-header";
   const title = document.createElement("strong");
   title.textContent = "自动过零校准";
@@ -854,7 +855,10 @@ function renderAutoZeroCrossControl(device) {
   stop.addEventListener("click", () => stopAutoZeroCross().catch((err) => toast(err.message)));
   actions.append(start, stop);
 
-  box.append(header, serial, settings, metrics, error, rawPanel, actions);
+  const body = document.createElement("div");
+  body.className = "auto-zero-cross-body";
+  body.append(serial, settings, metrics, error, rawPanel, actions);
+  box.append(header, body);
   return box;
 }
 
@@ -899,6 +903,8 @@ function updateZeroCrossPanel() {
   const zc = state.zeroCrossStatus || {};
   const device = selectedDevice();
   const active = Boolean(zc.active);
+  const card = $("auto-zero-cross-card");
+  if (card && active) card.open = true;
   resultNode.textContent = zeroCrossResultLabel(zc.result, active);
   resultNode.className = ["zc-result", active ? "active" : "", zc.result === "success" ? "success" : "", zc.result === "error" || zc.result === "timeout" ? "danger" : ""].filter(Boolean).join(" ");
 

@@ -654,12 +654,10 @@ textarea {
 }
 
 .auto-zero-cross-card {
-  display: grid;
-  gap: 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #f8fafc;
-  padding: 10px;
+  overflow: hidden;
 }
 
 .auto-zero-cross-header {
@@ -667,10 +665,39 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-height: 42px;
+  padding: 0 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.auto-zero-cross-header::-webkit-details-marker {
+  display: none;
+}
+
+.auto-zero-cross-header::before {
+  content: "展开";
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.auto-zero-cross-card[open] .auto-zero-cross-header::before {
+  content: "收起";
+  color: var(--muted);
 }
 
 .auto-zero-cross-header strong {
+  flex: 1 1 auto;
   font-size: 13px;
+}
+
+.auto-zero-cross-body {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 10px;
 }
 
 .zc-result {
