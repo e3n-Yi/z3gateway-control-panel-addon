@@ -149,6 +149,14 @@ def uint16_hex_bytes(value: int) -> str:
     return f"{(value >> 8) & 0xFF:02X} {value & 0xFF:02X}"
 
 
+def clamp_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
 class ZigbeeDeviceRegistry:
     TC_HANDLER_RE = re.compile(
         r"Trust Center Join Handler:\s*status\s*=\s*(.*?),.*?shortid\s+(0x[0-9A-Fa-f]{4})"
@@ -863,6 +871,19 @@ class ZeroCrossCalibrator:
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         node_id = normalize_node_id(str(payload.get("nodeId") or payload.get("node_id") or ""))
         endpoint = str(payload.get("endpoint") or "1").strip() or "1"
+        interval_ms = clamp_int(
+            payload.get("switchIntervalMs") or payload.get("switch_interval_ms"),
+            int(ZERO_CROSS_SWITCH_INTERVAL_SECONDS * 1000),
+            5000,
+            60000,
+        )
+        success_window_us = clamp_int(
+            payload.get("successWindowUs") or payload.get("success_window_us"),
+            ZERO_CROSS_SUCCESS_WINDOW_US,
+            0,
+            10000,
+        )
+        interval_seconds = interval_ms / 1000.0
         if not node_id:
             raise ValueError("nodeId is required")
         if not endpoint.isdigit():
@@ -892,6 +913,9 @@ class ZeroCrossCalibrator:
                     "serial_port": serial_port,
                     "target_node": node_id,
                     "endpoint": endpoint,
+                    "success_window_us": success_window_us,
+                    "switch_interval_seconds": interval_seconds,
+                    "round_interval_seconds": interval_seconds,
                     "result": "running",
                     "started_at": now_iso(),
                     "stopped_at": None,
@@ -1052,6 +1076,9 @@ class ZeroCrossCalibrator:
                 node_id = self.state["target_node"]
                 endpoint = self.state["endpoint"]
                 max_rounds = int(self.state["max_rounds"])
+                switch_interval_seconds = float(self.state.get("switch_interval_seconds") or ZERO_CROSS_SWITCH_INTERVAL_SECONDS)
+                round_interval_seconds = float(self.state.get("round_interval_seconds") or ZERO_CROSS_CALIBRATION_SETTLE_SECONDS)
+                success_window_us = int(self.state.get("success_window_us") or ZERO_CROSS_SUCCESS_WINDOW_US)
             for round_no in range(1, max_rounds + 1):
                 if self.stop_event.is_set():
                     final_result = "stopped"
@@ -1061,14 +1088,14 @@ class ZeroCrossCalibrator:
                     self.state["last_on_status"] = None
                     self.state["last_off_status"] = None
                 self._emit(f"[zerocross] 第 {round_no} 轮开始\n")
-                on_ok = self._run_edge("on", node_id, endpoint)
+                on_ok = self._run_edge("on", node_id, endpoint, success_window_us)
                 if self.stop_event.is_set():
                     final_result = "stopped"
                     break
-                if not self._wait_or_stop(ZERO_CROSS_SWITCH_INTERVAL_SECONDS):
+                if not self._wait_or_stop(switch_interval_seconds):
                     final_result = "stopped"
                     break
-                off_ok = self._run_edge("off", node_id, endpoint)
+                off_ok = self._run_edge("off", node_id, endpoint, success_window_us)
                 if self.stop_event.is_set():
                     final_result = "stopped"
                     break
@@ -1081,7 +1108,7 @@ class ZeroCrossCalibrator:
                         final_result = "timeout"
                         self._emit("[zerocross] 连续测量超时过多，自动校准停止\n")
                         break
-                if not self._wait_or_stop(ZERO_CROSS_CALIBRATION_SETTLE_SECONDS):
+                if not self._wait_or_stop(round_interval_seconds):
                     final_result = "stopped"
                     break
             else:
@@ -1096,7 +1123,7 @@ class ZeroCrossCalibrator:
             self._close_serial()
             self._finish(final_result)
 
-    def _run_edge(self, kind: str, node_id: str, endpoint: str) -> bool:
+    def _run_edge(self, kind: str, node_id: str, endpoint: str, success_window_us: int) -> bool:
         action = "on" if kind == "on" else "off"
         label = self.ACTION_LABELS[kind]
         with self.lock:
@@ -1117,10 +1144,10 @@ class ZeroCrossCalibrator:
         value_us = int(measurement["value_us"])
         with self.lock:
             self.state["consecutive_timeouts"] = 0
-        if value_us <= ZERO_CROSS_SUCCESS_WINDOW_US:
+        if value_us <= success_window_us:
             with self.lock:
                 self.state[f"last_{kind}_status"] = "success"
-            self._emit(f"[zerocross] {label}: {value_us}us <= {ZERO_CROSS_SUCCESS_WINDOW_US}us，达标\n")
+            self._emit(f"[zerocross] {label}: {value_us}us <= {success_window_us}us，达标\n")
             return True
 
         calibration_us = max(0, min(0xFFFF, ZERO_CROSS_HALF_CYCLE_US - value_us))

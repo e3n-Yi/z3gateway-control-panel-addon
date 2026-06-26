@@ -1,5 +1,5 @@
 name: Z3Gateway Control Panel
-version: "0.1.8"
+version: "0.1.9"
 slug: z3gateway_control_panel
 description: Local web control panel for Silicon Labs zigbee_z3_gateway host.
 arch:

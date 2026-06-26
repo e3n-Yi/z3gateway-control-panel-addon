@@ -702,25 +702,58 @@ textarea {
   background: #fff6f6;
 }
 
-.auto-zero-cross-metrics {
+.auto-zero-cross-settings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 10px;
+  gap: 8px;
 }
 
-.auto-zero-cross-metrics div {
+.auto-zero-cross-settings label {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
-  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.auto-zero-cross-settings span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.auto-zero-cross-settings input {
+  width: 100%;
+  min-width: 0;
+}
+
+.auto-zero-cross-metrics {
+  display: grid;
   gap: 6px;
 }
 
-.auto-zero-cross-metrics span {
+.zc-metric-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.zc-metric-row.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.zc-metric-cell {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.zc-metric-cell span {
   color: var(--muted);
   font-size: 12px;
 }
 
-.auto-zero-cross-metrics code {
+.zc-metric-cell code {
   min-width: 0;
   overflow-wrap: anywhere;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -728,16 +761,11 @@ textarea {
 }
 
 .zc-raw-panel {
-  display: grid;
-  gap: 6px;
   border: 1px solid #263545;
   border-radius: 6px;
   background: var(--code);
-  padding: 8px;
-}
-
-.zc-raw-panel.hidden-line {
-  display: none;
+  padding: 0;
+  overflow: hidden;
 }
 
 .zc-raw-header {
@@ -745,8 +773,31 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-height: 34px;
+  padding: 0 8px;
   color: var(--code-text);
   font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.zc-raw-header::-webkit-details-marker {
+  display: none;
+}
+
+.zc-raw-header::before {
+  content: "展开";
+  flex: 0 0 auto;
+  color: #9fb1c4;
+  font-size: 11px;
+}
+
+.zc-raw-panel[open] .zc-raw-header::before {
+  content: "收起";
+}
+
+.zc-raw-header strong {
+  flex: 1 1 auto;
 }
 
 .zc-raw-header span {
@@ -759,6 +810,8 @@ textarea {
   max-height: 160px;
   margin: 0;
   overflow: auto;
+  border-top: 1px solid #263545;
+  padding: 8px;
   color: var(--code-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;

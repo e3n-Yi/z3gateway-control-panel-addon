@@ -6,12 +6,15 @@ function appUrl(path) {
 
 const DRAWER_PIN_STORAGE_KEY = "z3-panel-command-drawer-pinned";
 const DEVICE_ENDPOINTS_STORAGE_KEY = "z3-panel-device-endpoints";
+const ZERO_CROSS_SETTINGS_STORAGE_KEY = "z3-panel-zero-cross-settings";
 
 const state = {
   status: null,
   commands: null,
   zigbeeDevices: [],
   zeroCrossStatus: null,
+  zeroCrossSettings: { intervalMs: 5000, successWindowUs: 500 },
+  zeroCrossWasActive: false,
   zigbeeDeviceSignature: "",
   zigbeeDeviceChoiceSignature: "",
   commandDeviceRenderPending: false,
@@ -92,6 +95,30 @@ function loadDeviceEndpoints() {
 
 function saveDeviceEndpoints() {
   localStorage.setItem(DEVICE_ENDPOINTS_STORAGE_KEY, JSON.stringify(state.deviceEndpoints));
+}
+
+function loadZeroCrossSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ZERO_CROSS_SETTINGS_STORAGE_KEY) || "{}");
+    state.zeroCrossSettings = {
+      intervalMs: Number.isFinite(Number(saved.intervalMs)) ? Number(saved.intervalMs) : 5000,
+      successWindowUs: Number.isFinite(Number(saved.successWindowUs)) ? Number(saved.successWindowUs) : 500,
+    };
+  } catch {
+    localStorage.removeItem(ZERO_CROSS_SETTINGS_STORAGE_KEY);
+    state.zeroCrossSettings = { intervalMs: 5000, successWindowUs: 500 };
+  }
+}
+
+function saveZeroCrossSettings() {
+  localStorage.setItem(ZERO_CROSS_SETTINGS_STORAGE_KEY, JSON.stringify(state.zeroCrossSettings));
+}
+
+function numberFromInput(id, fallback, minimum, maximum) {
+  const node = $(id);
+  const value = Number(node?.value);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(minimum, Math.min(maximum, Math.round(value)));
 }
 
 function setInputValue(id, value) {
@@ -740,34 +767,64 @@ function renderAutoZeroCrossControl(device) {
 
   const metrics = document.createElement("div");
   metrics.className = "auto-zero-cross-metrics";
-  [
-    ["轮次", "zc-round"],
-    ["开灯测量", "zc-on-measurement"],
-    ["开灯补偿", "zc-on-calibration"],
-    ["开灯状态", "zc-on-status"],
-    ["关灯测量", "zc-off-measurement"],
-    ["关灯补偿", "zc-off-calibration"],
-    ["关灯状态", "zc-off-status"],
-    ["超时", "zc-timeouts"],
-  ].forEach(([label, id]) => {
+  const addMetricRow = (items, single = false) => {
     const row = document.createElement("div");
-    const key = document.createElement("span");
-    key.textContent = label;
-    const value = document.createElement("code");
-    value.id = id;
-    value.textContent = "-";
-    row.append(key, value);
+    row.className = `zc-metric-row${single ? " single" : ""}`;
+    items.forEach(([label, id]) => {
+      const cell = document.createElement("div");
+      cell.className = "zc-metric-cell";
+      const key = document.createElement("span");
+      key.textContent = label;
+      const value = document.createElement("code");
+      value.id = id;
+      value.textContent = "-";
+      cell.append(key, value);
+      row.appendChild(cell);
+    });
     metrics.appendChild(row);
+  };
+  addMetricRow([["轮次", "zc-round"]], true);
+  addMetricRow([["开灯测量", "zc-on-measurement"], ["开灯补偿", "zc-on-calibration"]]);
+  addMetricRow([["开灯状态", "zc-on-status"]], true);
+  addMetricRow([["关灯测量", "zc-off-measurement"], ["关灯补偿", "zc-off-calibration"]]);
+  addMetricRow([["关灯状态", "zc-off-status"]], true);
+  addMetricRow([["超时次数", "zc-timeouts"]], true);
+
+  const settings = document.createElement("div");
+  settings.className = "auto-zero-cross-settings";
+  [
+    ["发送间隔 ms", "zc-interval-ms", state.zeroCrossSettings.intervalMs, 5000, 60000, 500],
+    ["通过范围 us", "zc-success-window-us", state.zeroCrossSettings.successWindowUs, 0, 10000, 50],
+  ].forEach(([label, id, value, min, max, step]) => {
+    const field = document.createElement("label");
+    const text = document.createElement("span");
+    text.textContent = label;
+    const input = document.createElement("input");
+    input.id = id;
+    input.type = "number";
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(value);
+    input.addEventListener("change", () => {
+      state.zeroCrossSettings.intervalMs = numberFromInput("zc-interval-ms", 5000, 5000, 60000);
+      state.zeroCrossSettings.successWindowUs = numberFromInput("zc-success-window-us", 500, 0, 10000);
+      saveZeroCrossSettings();
+      if ($("zc-interval-ms")) $("zc-interval-ms").value = String(state.zeroCrossSettings.intervalMs);
+      if ($("zc-success-window-us")) $("zc-success-window-us").value = String(state.zeroCrossSettings.successWindowUs);
+    });
+    field.append(text, input);
+    settings.appendChild(field);
   });
 
   const error = document.createElement("p");
   error.id = "zc-error";
   error.className = "muted warning-text hidden-line";
 
-  const rawPanel = document.createElement("div");
+  const rawPanel = document.createElement("details");
   rawPanel.id = "zc-raw-panel";
-  rawPanel.className = "zc-raw-panel hidden-line";
-  const rawHeader = document.createElement("div");
+  rawPanel.className = "zc-raw-panel";
+  const rawHeader = document.createElement("summary");
   rawHeader.className = "zc-raw-header";
   const rawTitle = document.createElement("strong");
   rawTitle.textContent = "仪器原始串口";
@@ -797,7 +854,7 @@ function renderAutoZeroCrossControl(device) {
   stop.addEventListener("click", () => stopAutoZeroCross().catch((err) => toast(err.message)));
   actions.append(start, stop);
 
-  box.append(header, serial, metrics, error, rawPanel, actions);
+  box.append(header, serial, settings, metrics, error, rawPanel, actions);
   return box;
 }
 
@@ -864,13 +921,31 @@ function updateZeroCrossPanel() {
   const rawLog = $("zc-raw-log");
   const rawCount = $("zc-raw-count");
   if (rawPanel && rawLog && rawCount) {
-    rawPanel.classList.toggle("hidden-line", !active);
+    if (active) {
+      rawPanel.open = true;
+    } else if (state.zeroCrossWasActive) {
+      rawPanel.open = false;
+    }
+    rawPanel.classList.toggle("active", active);
     rawCount.textContent = `${rawFrames.length} 帧`;
     rawLog.textContent = rawFrames.length
       ? rawFrames.map(formatZeroCrossRawFrame).filter(Boolean).join("\n")
       : "等待仪器数据";
     if (active) rawLog.scrollTop = rawLog.scrollHeight;
   }
+
+  const intervalInput = $("zc-interval-ms");
+  const successInput = $("zc-success-window-us");
+  if (intervalInput) {
+    intervalInput.disabled = active;
+    if (active && zc.switch_interval_seconds) intervalInput.value = String(Math.round(zc.switch_interval_seconds * 1000));
+  }
+  if (successInput) {
+    successInput.disabled = active;
+    if (active && zc.success_window_us !== undefined) successInput.value = String(zc.success_window_us);
+  }
+
+  state.zeroCrossWasActive = active;
 
   const canStart = state.status?.running && canOperateDevice(device) && !active;
   const startButton = $("zc-start");
@@ -889,9 +964,17 @@ async function startAutoZeroCross(device) {
     return;
   }
   const endpoint = endpointForDevice(device);
+  state.zeroCrossSettings.intervalMs = numberFromInput("zc-interval-ms", 5000, 5000, 60000);
+  state.zeroCrossSettings.successWindowUs = numberFromInput("zc-success-window-us", 500, 0, 10000);
+  saveZeroCrossSettings();
   state.zeroCrossStatus = await api("/api/zerocross/start", {
     method: "POST",
-    body: JSON.stringify({ nodeId: device.nodeId, endpoint }),
+    body: JSON.stringify({
+      nodeId: device.nodeId,
+      endpoint,
+      switchIntervalMs: state.zeroCrossSettings.intervalMs,
+      successWindowUs: state.zeroCrossSettings.successWindowUs,
+    }),
   });
   $("command-preview").value = `自动过零校准\nnode ${device.nodeId}\nendpoint ${endpoint}`;
   updateZeroCrossPanel();
@@ -1210,6 +1293,7 @@ function wireEvents() {
 async function init() {
   loadCommandDrawerPinned();
   loadDeviceEndpoints();
+  loadZeroCrossSettings();
   wireEvents();
   await Promise.all([refreshStatus(), refreshDevices(), loadCommands(), loadZigbeeDevices(), refreshZeroCrossStatus()]);
   if (state.status.default_executable) {
