@@ -793,7 +793,7 @@ function renderAutoZeroCrossControl(device) {
   const settings = document.createElement("div");
   settings.className = "auto-zero-cross-settings";
   [
-    ["发送间隔 ms", "zc-interval-ms", state.zeroCrossSettings.intervalMs, 5000, 60000, 500],
+    ["发送间隔 ms", "zc-interval-ms", state.zeroCrossSettings.intervalMs, 1000, 10000, 500],
     ["通过范围 us", "zc-success-window-us", state.zeroCrossSettings.successWindowUs, 0, 10000, 50],
   ].forEach(([label, id, value, min, max, step]) => {
     const field = document.createElement("label");
@@ -807,7 +807,7 @@ function renderAutoZeroCrossControl(device) {
     input.step = String(step);
     input.value = String(value);
     input.addEventListener("change", () => {
-      state.zeroCrossSettings.intervalMs = numberFromInput("zc-interval-ms", 5000, 5000, 60000);
+      state.zeroCrossSettings.intervalMs = numberFromInput("zc-interval-ms", 5000, 1000, 10000);
       state.zeroCrossSettings.successWindowUs = numberFromInput("zc-success-window-us", 500, 0, 10000);
       saveZeroCrossSettings();
       if ($("zc-interval-ms")) $("zc-interval-ms").value = String(state.zeroCrossSettings.intervalMs);
@@ -964,7 +964,7 @@ async function startAutoZeroCross(device) {
     return;
   }
   const endpoint = endpointForDevice(device);
-  state.zeroCrossSettings.intervalMs = numberFromInput("zc-interval-ms", 5000, 5000, 60000);
+  state.zeroCrossSettings.intervalMs = numberFromInput("zc-interval-ms", 5000, 1000, 10000);
   state.zeroCrossSettings.successWindowUs = numberFromInput("zc-success-window-us", 500, 0, 10000);
   saveZeroCrossSettings();
   state.zeroCrossStatus = await api("/api/zerocross/start", {

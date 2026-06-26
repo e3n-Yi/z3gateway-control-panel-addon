@@ -874,8 +874,8 @@ class ZeroCrossCalibrator:
         interval_ms = clamp_int(
             payload.get("switchIntervalMs") or payload.get("switch_interval_ms"),
             int(ZERO_CROSS_SWITCH_INTERVAL_SECONDS * 1000),
-            5000,
-            60000,
+            1000,
+            10000,
         )
         success_window_us = clamp_int(
             payload.get("successWindowUs") or payload.get("success_window_us"),
