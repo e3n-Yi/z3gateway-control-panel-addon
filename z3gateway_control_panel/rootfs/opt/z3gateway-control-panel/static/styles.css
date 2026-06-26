@@ -506,6 +506,7 @@ textarea:focus {
 
 .param-form {
   display: grid;
+  grid-auto-rows: max-content;
   gap: 10px;
   margin: 12px 0;
 }
@@ -658,7 +659,6 @@ textarea {
   border-radius: 6px;
   background: #f8fafc;
   overflow: hidden;
-  min-height: max-content;
 }
 
 .auto-zero-cross-header {
