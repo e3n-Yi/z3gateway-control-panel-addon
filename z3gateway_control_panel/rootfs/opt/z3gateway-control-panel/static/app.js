@@ -859,6 +859,11 @@ function renderAutoZeroCrossControl(device) {
   body.className = "auto-zero-cross-body";
   body.append(serial, settings, metrics, error, rawPanel, actions);
   box.append(header, body);
+  box.addEventListener("toggle", () => {
+    if (box.open) {
+      box.scrollIntoView({ block: "start" });
+    }
+  });
   return box;
 }
 
