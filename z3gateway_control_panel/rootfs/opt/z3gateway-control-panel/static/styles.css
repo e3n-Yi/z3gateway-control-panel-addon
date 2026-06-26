@@ -658,6 +658,7 @@ textarea {
   border-radius: 6px;
   background: #f8fafc;
   overflow: hidden;
+  min-height: max-content;
 }
 
 .auto-zero-cross-header {
