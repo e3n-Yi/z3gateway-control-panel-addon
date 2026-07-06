@@ -32,16 +32,17 @@ if [ -n "$CONFIGURED_SERIAL_PORT" ] && [ -e "$CONFIGURED_SERIAL_PORT" ]; then
   fi
 fi
 CONFIGURED_CALIBRATION_SERIAL_PORT="$(option calibration_serial_port "")"
-CALIBRATION_SERIAL_PORT="$CONFIGURED_CALIBRATION_SERIAL_PORT"
+CALIBRATION_SERIAL_PORT=""
 if [ -n "$CONFIGURED_CALIBRATION_SERIAL_PORT" ]; then
   if [ -e "$CONFIGURED_CALIBRATION_SERIAL_PORT" ]; then
     if ln -sfn "$CONFIGURED_CALIBRATION_SERIAL_PORT" /dev/z3zc; then
       CALIBRATION_SERIAL_PORT=/dev/z3zc
     else
+      CALIBRATION_SERIAL_PORT="$CONFIGURED_CALIBRATION_SERIAL_PORT"
       printf '[z3gateway-control-panel] warning: failed to create /dev/z3zc alias for %s\n' "$CONFIGURED_CALIBRATION_SERIAL_PORT"
     fi
   else
-    printf '[z3gateway-control-panel] warning: calibration_serial_port does not exist: %s\n' "$CONFIGURED_CALIBRATION_SERIAL_PORT"
+    printf '[z3gateway-control-panel] warning: calibration_serial_port does not exist, ignoring: %s\n' "$CONFIGURED_CALIBRATION_SERIAL_PORT"
   fi
 fi
 NETWORK_INDEX="$(option network_index 1)"
