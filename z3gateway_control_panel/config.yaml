@@ -1,5 +1,5 @@
 name: Z3Gateway Control Panel
-version: "0.1.15"
+version: "0.1.16"
 slug: z3gateway_control_panel
 description: Local web control panel for Silicon Labs zigbee_z3_gateway host.
 arch:
@@ -19,10 +19,11 @@ ports_description:
   8765/tcp: Optional direct access to the Z3Gateway web console.
 options:
   serial_port: /dev/ttyUSB0
+  calibration_serial_port: ""
   network_index: "1"
   baud_rate: "115200"
 schema:
   serial_port: device(subsystem=tty)
-  calibration_serial_port: "device(subsystem=tty)?"
+  calibration_serial_port: str?
   network_index: str
   baud_rate: str
