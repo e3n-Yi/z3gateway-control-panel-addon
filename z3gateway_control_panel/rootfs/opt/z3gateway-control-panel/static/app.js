@@ -274,11 +274,7 @@ async function refreshZeroCrossStatus() {
   return state.zeroCrossStatus;
 }
 
-async function loadZigbeeDevices({ reparse = false } = {}) {
-  const data = reparse
-    ? await api("/api/zigbee/devices/reparse", { method: "POST", body: JSON.stringify({}) })
-    : await api("/api/zigbee/devices");
-  const devices = data.devices || [];
+function applyZigbeeDevices(devices, { force = false } = {}) {
   const nextSignature = zigbeeDevicesSignature(devices);
   const nextChoiceSignature = zigbeeDeviceChoiceSignature(devices);
   const changed = nextSignature !== state.zigbeeDeviceSignature;
@@ -286,9 +282,15 @@ async function loadZigbeeDevices({ reparse = false } = {}) {
   state.zigbeeDevices = devices;
   state.zigbeeDeviceSignature = nextSignature;
   state.zigbeeDeviceChoiceSignature = nextChoiceSignature;
-  if (!changed && !reparse) return;
+  if (!selectedDevice()) {
+    state.selectedDeviceRef = null;
+  }
+  if (!changed && !force) return;
 
   renderZigbeeDevices();
+  if (state.drawerMode === "device" && !selectedDevice()) {
+    state.drawerMode = "command";
+  }
   if (state.drawerMode === "device") {
     if (isEditingCommandForm()) {
       state.commandDeviceRenderPending = true;
@@ -296,13 +298,27 @@ async function loadZigbeeDevices({ reparse = false } = {}) {
     }
     renderSelectedCommand();
   }
-  if (!choicesChanged && !reparse) return;
+  if (!choicesChanged && !force) return;
   if (isEditingCommandForm()) {
     state.commandDeviceRenderPending = true;
     return;
   }
   state.commandDeviceRenderPending = false;
   renderSelectedCommand();
+}
+
+async function loadZigbeeDevices({ reparse = false } = {}) {
+  const data = reparse
+    ? await api("/api/zigbee/devices/reparse", { method: "POST", body: JSON.stringify({}) })
+    : await api("/api/zigbee/devices");
+  applyZigbeeDevices(data.devices || [], { force: reparse });
+}
+
+async function clearZigbeeDevices() {
+  if (!window.confirm("清空本地设备记录？这不会踢设备离网，网关记录会保留。")) return;
+  const data = await api("/api/zigbee/devices/clear", { method: "POST", body: JSON.stringify({}) });
+  applyZigbeeDevices(data.devices || [], { force: true });
+  toast("设备记录已清空");
 }
 
 function scheduleZigbeeDeviceRefresh() {
@@ -313,7 +329,7 @@ function scheduleZigbeeDeviceRefresh() {
 }
 
 function mayContainZigbeeDeviceChange(text) {
-  return /Trust Center Join Handler|Device Announce|RX:\s*ZDO,\s*command\s+0x8034|node \[\(>\)[0-9A-Fa-f]{16}\]|nodeID \[0x[0-9A-Fa-f]{1,4}\]/i.test(text)
+  return /Trust Center Join Handler|Device Announce|RX:\s*ZDO,\s*command\s+0x8034|node \[\(>\)[0-9A-Fa-f]{16}\]|nodeID \[0x[0-9A-Fa-f]{1,4}\]|^\s*>?\s*network\s+leave\s*$/im.test(text)
     || /^\s*\d+:\s+0x[0-9A-Fa-f]{4}\s+\d+\s+/m.test(text);
 }
 
@@ -1258,6 +1274,7 @@ function wireEvents() {
   $("param-form").addEventListener("focusout", () => {
     setTimeout(renderPendingCommandDevicesIfIdle, 0);
   });
+  $("clear-devices").addEventListener("click", () => clearZigbeeDevices().catch((err) => toast(err.message)));
   $("reparse-devices").addEventListener("click", () => {
     loadZigbeeDevices({ reparse: true })
       .then(() => toast("设备记录已从历史日志重扫"))

@@ -55,7 +55,10 @@
       <section class="panel zigbee-devices-panel">
         <div class="panel-title">
           <h2>设备记录</h2>
-          <button id="reparse-devices" class="ghost" type="button">重扫日志</button>
+          <div class="toolbar compact-toolbar">
+            <button id="clear-devices" class="ghost danger-text" type="button">清空记录</button>
+            <button id="reparse-devices" class="ghost" type="button">重扫日志</button>
+          </div>
         </div>
         <div id="zigbee-device-list" class="zigbee-device-list">
           <p class="muted">暂无设备。</p>

@@ -78,6 +78,14 @@ button:disabled {
   background: #f8fafc;
 }
 
+.danger-text {
+  color: var(--danger);
+}
+
+.compact-toolbar {
+  gap: 6px;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -443,6 +451,7 @@ textarea:focus {
 
 .zigbee-device-list {
   display: grid;
+  align-content: start;
   gap: 8px;
   overflow: auto;
   min-height: 0;
@@ -450,9 +459,14 @@ textarea:focus {
 
 .zigbee-device {
   display: grid;
+  grid-template-rows: auto auto auto;
+  align-items: start;
   width: 100%;
-  min-height: 0;
-  gap: 4px;
+  min-width: 0;
+  min-height: 68px;
+  max-height: 74px;
+  gap: 3px;
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #f8fafc;
@@ -470,22 +484,34 @@ textarea:focus {
 }
 
 .zigbee-device strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 13px;
+  line-height: 1.25;
 }
 
 .zigbee-device code {
-  overflow-wrap: anywhere;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
+  line-height: 1.25;
 }
 
 .zigbee-device-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.25;
 }
 
 .device-field-control {

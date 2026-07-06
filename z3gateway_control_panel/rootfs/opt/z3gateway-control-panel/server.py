@@ -162,6 +162,7 @@ class ZigbeeDeviceRegistry:
         r"Trust Center Join Handler:\s*status\s*=\s*(.*?),.*?shortid\s+(0x[0-9A-Fa-f]{4})"
     )
     LEAVE_COMMAND_RE = re.compile(r"^\s*>?\s*zdo\s+leave\s+(0x[0-9A-Fa-f]{1,4})\s+\d+\s+\d+\s*$", re.IGNORECASE)
+    NETWORK_LEAVE_COMMAND_RE = re.compile(r"^\s*>?\s*network\s+leave\s*$", re.IGNORECASE)
     LEAVE_RESPONSE_RE = re.compile(r"RX:\s*ZDO,\s*command\s+0x8034,\s*status:\s*0x00", re.IGNORECASE)
     ANNOUNCE_RE = re.compile(r"Device Announce:\s*(0x[0-9A-Fa-f]{4})")
     INFO_NODE_RE = re.compile(r"node \[(?:\(>\))?([0-9A-Fa-f]{16})\]")
@@ -248,6 +249,12 @@ class ZigbeeDeviceRegistry:
     def _parse_line(self, line: str, ts: str) -> tuple[bool, set[str]]:
         changed = False
         joined_node_ids: set[str] = set()
+        if self.NETWORK_LEAVE_COMMAND_RE.match(line):
+            changed |= self.clear_devices(keep_gateway=True, save=False)
+            with self.lock:
+                self.pending_leave_node_id = None
+            return changed, joined_node_ids
+
         leave_command = self.LEAVE_COMMAND_RE.match(line)
         if leave_command:
             with self.lock:
@@ -325,6 +332,24 @@ class ZigbeeDeviceRegistry:
             for key in keys:
                 self.devices.pop(key, None)
             return True
+
+    def clear_devices(self, *, keep_gateway: bool = True, save: bool = True) -> bool:
+        with self.lock:
+            before = json.dumps(self.devices, sort_keys=True, ensure_ascii=False)
+            if keep_gateway:
+                self.devices = {
+                    key: device
+                    for key, device in self.devices.items()
+                    if device.get("role") == "gateway"
+                }
+            else:
+                self.devices = {}
+            self.pending_leave_node_id = None
+            after = json.dumps(self.devices, sort_keys=True, ensure_ascii=False)
+        changed = before != after
+        if changed and save:
+            self.save()
+        return changed
 
     def upsert(
         self,
@@ -1345,6 +1370,9 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json(manager.send_command(str(payload.get("command") or "")))
         elif path == "/api/zigbee/devices/reparse":
             self.send_json({"devices": zigbee_registry.rebuild_from_logs()})
+        elif path == "/api/zigbee/devices/clear":
+            zigbee_registry.clear_devices(keep_gateway=True)
+            self.send_json({"devices": zigbee_registry.list_devices()})
         else:
             self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
