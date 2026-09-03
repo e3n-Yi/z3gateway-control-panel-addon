@@ -38,6 +38,11 @@ DATA_DIR = Path(os.environ.get("Z3_PANEL_DATA_DIR", str(APP_DIR / "data"))).expa
 LOG_DIR = DATA_DIR / "logs"
 COMMANDS_FILE = CONFIG_DIR / "commands.json"
 DEVICES_FILE = DATA_DIR / "devices.json"
+# Bound both the replay payload and each slow browser's pending live output.
+LOG_HISTORY_CHAR_LIMIT = 128 * 1024
+LOG_HISTORY_EVENT_LIMIT = 2000
+LOG_EVENT_CHAR_LIMIT = 4096
+LOG_SUBSCRIBER_EVENT_LIMIT = 128
 INFO_COMMAND = "info"
 INFO_START_DELAY_SECONDS = 1.2
 NEIGHBOR_TABLE_COMMAND = "plugin stack-diagnostics neighbor-table"
@@ -480,7 +485,8 @@ class GatewayManager:
         self.configured_serial_port: str = CONFIGURED_SERIAL_PORT
         self.serial_port: str = resolve_runtime_serial_port(DEFAULT_SERIAL_PORT)
         self.baud_rate: str = DEFAULT_BAUD_RATE
-        self.history: deque[dict[str, Any]] = deque(maxlen=2000)
+        self.history: deque[dict[str, Any]] = deque()
+        self.history_chars = 0
         self.subscribers: set[queue.Queue[dict[str, Any]]] = set()
         self.gateway_info_timer: threading.Timer | None = None
         self.neighbor_table_timer: threading.Timer | None = None
@@ -546,6 +552,7 @@ class GatewayManager:
             session_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
             self.session_log = LOG_DIR / f"gateway-{session_id}.log"
             self.history.clear()
+            self.history_chars = 0
             with self.prompt_condition:
                 self.prompt_seq = 0
                 self.output_tail = ""
@@ -751,10 +758,16 @@ class GatewayManager:
             return list(self.history)
 
     def subscribe(self) -> queue.Queue[dict[str, Any]]:
-        q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=500)
+        q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=LOG_SUBSCRIBER_EVENT_LIMIT)
         with self.lock:
+            # Register with a snapshot atomically, without a history/live gap.
+            q.put_nowait(self._log_snapshot())
             self.subscribers.add(q)
         return q
+
+    def _log_snapshot(self) -> dict[str, Any]:
+        # Caller holds self.lock.
+        return {"ts": now_iso(), "kind": "snapshot", "text": "".join(event["text"] for event in self.history)}
 
     def unsubscribe(self, q: queue.Queue[dict[str, Any]]) -> None:
         with self.lock:
@@ -787,18 +800,32 @@ class GatewayManager:
             self._emit(f"\n[process exited with code {exit_code}]\n", "system")
 
     def _emit(self, text: str, kind: str) -> None:
-        event = {"ts": now_iso(), "kind": kind, "text": text}
+        event = {"ts": now_iso(), "kind": kind, "text": text[-LOG_EVENT_CHAR_LIMIT:]}
         if kind == "output":
             self._track_gateway_prompt(text)
         with self.lock:
             self.history.append(event)
+            self.history_chars += len(event["text"])
+            while self.history_chars > LOG_HISTORY_CHAR_LIMIT or len(self.history) > LOG_HISTORY_EVENT_LIMIT:
+                self.history_chars -= len(self.history.popleft()["text"])
             if self.session_log is not None:
                 try:
                     with self.session_log.open("a", encoding="utf-8") as fh:
                         fh.write(text)
                 except OSError:
                     pass
-            subscribers = list(self.subscribers)
+            for q in self.subscribers:
+                try:
+                    q.put_nowait(event)
+                except queue.Full:
+                    # Resume a slow browser at the current tail instead of
+                    # replaying a long backlog or silently losing newer output.
+                    while True:
+                        try:
+                            q.get_nowait()
+                        except queue.Empty:
+                            break
+                    q.put_nowait(self._log_snapshot())
         joined_node_ids: set[str] = set()
         try:
             joined_node_ids = zigbee_registry.parse_text(text, event["ts"])
@@ -807,11 +834,6 @@ class GatewayManager:
         if kind == "output" and joined_node_ids:
             reason = "device-join:" + ",".join(sorted(joined_node_ids))
             self.schedule_neighbor_table_refresh(reason)
-        for q in subscribers:
-            try:
-                q.put_nowait(event)
-            except queue.Full:
-                pass
 
     def _track_gateway_prompt(self, text: str) -> None:
         combined = self.output_tail + text
@@ -1402,16 +1424,17 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
+        self.connection.settimeout(20)
 
         def send_event(event: dict[str, Any]) -> None:
             data = json.dumps(event, ensure_ascii=False)
-            self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
+            event_type = "snapshot" if event["kind"] == "snapshot" else "message"
+            self.wfile.write(f"event: {event_type}\ndata: {data}\n\n".encode("utf-8"))
             self.wfile.flush()
 
         try:
-            for event in manager.snapshot():
-                send_event(event)
             q = manager.subscribe()
             try:
                 while True:
@@ -1423,7 +1446,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                         self.wfile.flush()
             finally:
                 manager.unsubscribe(q)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
             return
 
     def read_json_body(self) -> dict[str, Any]:

@@ -7,6 +7,11 @@ function appUrl(path) {
 const DRAWER_PIN_STORAGE_KEY = "z3-panel-command-drawer-pinned";
 const DEVICE_ENDPOINTS_STORAGE_KEY = "z3-panel-device-endpoints";
 const ZERO_CROSS_SETTINGS_STORAGE_KEY = "z3-panel-zero-cross-settings";
+const LOG_MAX_CHARS = 128 * 1024;
+const LOG_MAX_LINES = 1500;
+const LOG_FLUSH_MS = 100;
+const LIVE_REQUEST_TIMEOUT_MS = 10000;
+const liveRequests = new Map();
 
 const state = {
   status: null,
@@ -28,6 +33,16 @@ const state = {
   params: {},
   browserPath: "",
   logText: "",
+  logChunks: [],
+  logPendingChars: 0,
+  logRenderTimer: null,
+  logEvents: null,
+  liveReady: false,
+  liveRunning: false,
+  liveGeneration: 0,
+  liveTimers: new Set(),
+  pageActive: true,
+  panelIntersecting: true,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -50,6 +65,21 @@ async function api(path, options = {}) {
     throw new Error(data.error || `${response.status} ${response.statusText}`);
   }
   return data;
+}
+
+// Coalesce background reads and bound stalled requests, including refreshes
+// triggered by many log messages arriving together after a reconnect.
+function liveApi(path) {
+  if (liveRequests.has(path)) return liveRequests.get(path).promise;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIVE_REQUEST_TIMEOUT_MS);
+  const request = { controller, promise: null };
+  request.promise = api(path, { signal: controller.signal }).finally(() => {
+    clearTimeout(timer);
+    if (liveRequests.get(path) === request) liveRequests.delete(path);
+  });
+  liveRequests.set(path, request);
+  return request.promise;
 }
 
 function saveParams() {
@@ -129,7 +159,7 @@ function setInputValue(id, value) {
 }
 
 async function refreshStatus() {
-  state.status = await api("/api/status");
+  state.status = await liveApi("/api/status");
   const running = state.status.running;
   $("run-pill").textContent = running ? "RUNNING" : "STOPPED";
   $("run-pill").classList.toggle("running", running);
@@ -269,7 +299,7 @@ function renderPendingCommandDevicesIfIdle() {
 }
 
 async function refreshZeroCrossStatus() {
-  state.zeroCrossStatus = await api("/api/zerocross/status");
+  state.zeroCrossStatus = await liveApi("/api/zerocross/status");
   updateZeroCrossPanel();
   return state.zeroCrossStatus;
 }
@@ -310,7 +340,7 @@ function applyZigbeeDevices(devices, { force = false } = {}) {
 async function loadZigbeeDevices({ reparse = false } = {}) {
   const data = reparse
     ? await api("/api/zigbee/devices/reparse", { method: "POST", body: JSON.stringify({}) })
-    : await api("/api/zigbee/devices");
+    : await liveApi("/api/zigbee/devices");
   applyZigbeeDevices(data.devices || [], { force: reparse });
 }
 
@@ -322,9 +352,10 @@ async function clearZigbeeDevices() {
 }
 
 function scheduleZigbeeDeviceRefresh() {
-  clearTimeout(state.deviceRefreshTimer);
+  if (!state.liveRunning || state.deviceRefreshTimer !== null) return;
   state.deviceRefreshTimer = setTimeout(() => {
-    loadZigbeeDevices().catch(() => {});
+    state.deviceRefreshTimer = null;
+    if (state.liveRunning) loadZigbeeDevices().catch(() => {});
   }, 900);
 }
 
@@ -1225,33 +1256,160 @@ async function sendManual() {
   $("manual-command").value = "";
 }
 
-function appendLog(text) {
-  state.logText += text;
+function panelIsVisible() {
+  return state.pageActive && !document.hidden && state.panelIntersecting;
+}
+
+function trimLogTail(text) {
+  const tail = text.slice(-LOG_MAX_CHARS);
+  const lines = tail.split("\n");
+  return lines.length > LOG_MAX_LINES ? lines.slice(-LOG_MAX_LINES).join("\n") : tail;
+}
+
+function flushLogs() {
+  state.logRenderTimer = null;
+  if (!panelIsVisible()) return;
   const output = $("log-output");
+  // Keep the reader's position when they scroll up to inspect earlier output.
+  const followTail = output.scrollHeight - output.scrollTop - output.clientHeight < 40;
+  state.logText = trimLogTail(state.logText + state.logChunks.join(""));
+  state.logChunks = [];
+  state.logPendingChars = 0;
   output.textContent = state.logText;
-  output.scrollTop = output.scrollHeight;
+  if (followTail) output.scrollTop = output.scrollHeight;
+}
+
+function appendLog(text) {
+  if (!text) return;
+  const chunk = String(text).slice(-LOG_MAX_CHARS);
+  state.logChunks.push(chunk);
+  state.logPendingChars += chunk.length;
+  // Bound pending output too, even if the browser suspends render timers.
+  while (state.logPendingChars > LOG_MAX_CHARS) {
+    const excess = state.logPendingChars - LOG_MAX_CHARS;
+    const first = state.logChunks[0];
+    if (first.length <= excess) {
+      state.logPendingChars -= state.logChunks.shift().length;
+    } else {
+      state.logChunks[0] = first.slice(excess);
+      state.logPendingChars -= excess;
+    }
+  }
+  while (state.logChunks.length > LOG_MAX_LINES) {
+    state.logPendingChars -= state.logChunks.shift().length;
+  }
+  if (state.logRenderTimer === null && panelIsVisible()) {
+    state.logRenderTimer = setTimeout(flushLogs, LOG_FLUSH_MS);
+  }
+}
+
+function clearLogs() {
+  clearTimeout(state.logRenderTimer);
+  state.logRenderTimer = null;
+  state.logChunks = [];
+  state.logPendingChars = 0;
+  state.logText = "";
+  $("log-output").textContent = "";
 }
 
 function connectLogs() {
+  if (state.logEvents || !panelIsVisible()) return;
   const events = new EventSource(appUrl("/api/logs/stream"));
-  events.onmessage = (event) => {
+  state.logEvents = events;
+  events.addEventListener("snapshot", (event) => {
+    if (state.logEvents !== events) return;
     try {
       const payload = JSON.parse(event.data);
-      const text = payload.text || "";
-      appendLog(text);
-      if (payload.kind === "output" && mayContainZigbeeDeviceChange(text)) {
-        scheduleZigbeeDeviceRefresh();
-      }
-      if (payload.kind === "system" && text.includes("[zerocross]")) {
-        refreshZeroCrossStatus().catch(() => {});
-      }
+      // Replace on every connection/resync; never append the same history again.
+      clearLogs();
+      appendLog(payload.text || "");
+      scheduleZigbeeDeviceRefresh();
+    } catch {
+      // Ignore malformed snapshots; the next reconnect can recover them.
+    }
+  });
+  events.onmessage = (event) => {
+    if (state.logEvents !== events) return;
+    let payload;
+    try {
+      payload = JSON.parse(event.data);
     } catch {
       appendLog(event.data);
+      return;
     }
+    const text = payload.text || "";
+    appendLog(text);
+    if (payload.kind === "output" && mayContainZigbeeDeviceChange(text)) {
+      scheduleZigbeeDeviceRefresh();
+    }
+    // Calibration status is polled at a bounded rate, not once per replayed log.
   };
   events.onerror = () => {
-    $("status-line").textContent = "日志连接中断，浏览器会自动重连";
+    if (state.logEvents === events) {
+      $("status-line").textContent = "日志连接中断，浏览器会自动重连";
+    }
   };
+}
+
+function pollWhileVisible(refresh, delay) {
+  const generation = state.liveGeneration;
+  const tick = async () => {
+    if (!state.liveRunning || generation !== state.liveGeneration) return;
+    try { await refresh(); } catch { /* Retry on the next scheduled poll. */ }
+    if (!state.liveRunning || generation !== state.liveGeneration) return;
+    const timer = setTimeout(() => {
+      state.liveTimers.delete(timer);
+      tick();
+    }, delay);
+    state.liveTimers.add(timer);
+  };
+  tick();
+}
+
+function updateLiveActivity() {
+  if (!state.liveReady) return;
+  const shouldRun = panelIsVisible();
+  if (state.liveRunning === shouldRun) return;
+  state.liveRunning = shouldRun;
+  state.liveGeneration += 1;
+  if (shouldRun) {
+    connectLogs();
+    pollWhileVisible(refreshStatus, 3000);
+    pollWhileVisible(refreshZeroCrossStatus, 1500);
+    loadZigbeeDevices().catch(() => {});
+  } else {
+    state.logEvents?.close();
+    state.logEvents = null;
+    for (const timer of state.liveTimers) clearTimeout(timer);
+    state.liveTimers.clear();
+    clearTimeout(state.deviceRefreshTimer);
+    state.deviceRefreshTimer = null;
+    clearTimeout(state.logRenderTimer);
+    state.logRenderTimer = null;
+    for (const request of liveRequests.values()) request.controller.abort();
+    liveRequests.clear();
+  }
+}
+
+function watchPanelVisibility() {
+  document.addEventListener("visibilitychange", updateLiveActivity);
+  window.addEventListener("pagehide", () => {
+    state.pageActive = false;
+    updateLiveActivity();
+  });
+  window.addEventListener("pageshow", () => {
+    state.pageActive = true;
+    updateLiveActivity();
+  });
+  // HA may retain an ingress iframe and hide it with CSS. This does not fire
+  // visibilitychange, so also observe whether the iframe is on screen.
+  if ("IntersectionObserver" in window) {
+    state.panelObserver = new IntersectionObserver(([entry]) => {
+      state.panelIntersecting = entry.isIntersecting;
+      updateLiveActivity();
+    });
+    state.panelObserver.observe(document.documentElement);
+  }
 }
 
 function searchLog() {
@@ -1305,10 +1463,7 @@ function wireEvents() {
   $("send-selected").addEventListener("click", () => sendSelected().catch((err) => toast(err.message)));
   $("send-manual").addEventListener("click", () => sendManual().catch((err) => toast(err.message)));
   $("command-filter").addEventListener("input", renderCommandList);
-  $("clear-log").addEventListener("click", () => {
-    state.logText = "";
-    $("log-output").textContent = "";
-  });
+  $("clear-log").addEventListener("click", clearLogs);
   $("copy-log").addEventListener("click", async () => {
     await navigator.clipboard.writeText($("log-output").textContent);
     toast("日志已复制");
@@ -1323,14 +1478,14 @@ async function init() {
   loadDeviceEndpoints();
   loadZeroCrossSettings();
   wireEvents();
+  watchPanelVisibility();
   await Promise.all([refreshStatus(), refreshDevices(), loadCommands(), loadZigbeeDevices(), refreshZeroCrossStatus()]);
   if (state.status.default_executable) {
     $("executable").value = state.status.default_executable;
   }
   await browse(state.status.allowed_root);
-  connectLogs();
-  setInterval(() => refreshStatus().catch(() => {}), 3000);
-  setInterval(() => refreshZeroCrossStatus().catch(() => {}), 1500);
+  state.liveReady = true;
+  updateLiveActivity();
 }
 
 init().catch((err) => toast(err.message));
