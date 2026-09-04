@@ -52,6 +52,7 @@ export Z3_PANEL_GATEWAY_ROOT=/opt/z3gateway-control-panel
 export Z3_PANEL_ALLOWED_ROOT=/opt/z3gateway-control-panel
 export Z3_PANEL_DEFAULT_EXECUTABLE=/opt/z3gateway-control-panel/build/debug/zigbee_z3_gateway
 export Z3_PANEL_DATA_DIR=/data
+export Z3_PANEL_OTA_DIR=/data/ota-files
 export Z3_PANEL_HOST=0.0.0.0
 export Z3_PANEL_PORT=8765
 export Z3_PANEL_CONFIGURED_SERIAL_PORT="$CONFIGURED_SERIAL_PORT"
@@ -61,7 +62,9 @@ export Z3_PANEL_DEFAULT_BAUD_RATE="$BAUD_RATE"
 export Z3_PANEL_CALIBRATION_SERIAL_PORT="$CALIBRATION_SERIAL_PORT"
 export PYTHONUNBUFFERED=1
 
-mkdir -p /data/logs
+mkdir -p /data/logs /data/ota-files
+rm -rf /opt/z3gateway-control-panel/build/debug/ota-files
+ln -s /data/ota-files /opt/z3gateway-control-panel/build/debug/ota-files
 
 printf '[z3gateway-control-panel] configured_serial_port=%s\n' "$CONFIGURED_SERIAL_PORT"
 printf '[z3gateway-control-panel] runtime_serial_port=%s\n' "$SERIAL_PORT"
@@ -69,6 +72,7 @@ printf '[z3gateway-control-panel] calibration_serial_port=%s\n' "${CALIBRATION_S
 printf '[z3gateway-control-panel] network_index=%s baud_rate=%s\n' "$NETWORK_INDEX" "$BAUD_RATE"
 printf '[z3gateway-control-panel] executable=%s\n' "$Z3_PANEL_DEFAULT_EXECUTABLE"
 printf '[z3gateway-control-panel] data_dir=%s\n' "$Z3_PANEL_DATA_DIR"
+printf '[z3gateway-control-panel] ota_dir=%s\n' "$Z3_PANEL_OTA_DIR"
 printf '[z3gateway-control-panel] starting web server on %s:%s\n' "$Z3_PANEL_HOST" "$Z3_PANEL_PORT"
 
 cd /opt/z3gateway-control-panel
