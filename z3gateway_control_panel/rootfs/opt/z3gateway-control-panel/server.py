@@ -85,6 +85,7 @@ OTA_DIR = Path(os.environ.get("Z3_PANEL_OTA_DIR", str(GATEWAY_ROOT / "build" / "
 OTA_UPLOAD_MAX_BYTES = int(os.environ.get("Z3_PANEL_OTA_UPLOAD_MAX_BYTES", str(512 * 1024 * 1024)))
 OTA_COPY_CHUNK_BYTES = 64 * 1024
 OTA_FILE_LOCK = threading.RLock()
+JSON_BODY_MAX_BYTES = 1024 * 1024
 CALIBRATION_SERIAL_PORT = os.environ.get("Z3_PANEL_CALIBRATION_SERIAL_PORT", "")
 CALIBRATION_BAUD_RATE = 9600
 ZERO_CROSS_HALF_CYCLE_US = 10000
@@ -1688,13 +1689,27 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
     def read_json_body(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length", "0"))
-        if length > 1024 * 1024:
-            raise ValueError("request body too large")
-        raw = self.rfile.read(length) if length else b"{}"
+        transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
+        if "chunked" in transfer_encoding:
+            raw = ChunkedRequestReader(self.rfile).read(JSON_BODY_MAX_BYTES + 1)
+            if len(raw) > JSON_BODY_MAX_BYTES:
+                self.close_connection = True
+                raise ValueError("request body too large")
+        else:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError as exc:
+                raise ValueError("invalid Content-Length") from exc
+            if length < 0:
+                raise ValueError("invalid Content-Length")
+            if length > JSON_BODY_MAX_BYTES:
+                raise ValueError("request body too large")
+            raw = self.rfile.read(length) if length else b"{}"
+        if not raw:
+            raw = b"{}"
         try:
             data = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("invalid JSON body") from exc
         if not isinstance(data, dict):
             raise ValueError("JSON body must be an object")
