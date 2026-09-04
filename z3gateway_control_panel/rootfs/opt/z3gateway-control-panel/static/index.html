@@ -52,6 +52,32 @@
         </div>
       </section>
 
+      <section class="panel ota-panel">
+        <div class="panel-title">
+          <div>
+            <h2>OTA 文件</h2>
+            <p id="ota-directory" class="muted ota-directory">加载中…</p>
+          </div>
+          <button id="ota-refresh" class="ghost" type="button">刷新</button>
+        </div>
+        <div id="ota-drop-zone" class="ota-drop-zone" tabindex="0" role="button" aria-label="选择或拖入 OTA 文件">
+          <strong>拖入 OTA 文件</strong>
+          <span>或点击选择文件；可一次选择多个</span>
+          <button id="ota-choose" class="primary" type="button">选择文件</button>
+          <input id="ota-file-input" class="ota-file-input" type="file" multiple />
+        </div>
+        <div id="ota-progress" class="ota-progress hidden" aria-live="polite">
+          <div class="ota-progress-line">
+            <span id="ota-progress-label">准备上传</span>
+            <span id="ota-progress-percent">0%</span>
+          </div>
+          <progress id="ota-progress-bar" max="100" value="0"></progress>
+        </div>
+        <div id="ota-file-list" class="ota-file-list">
+          <p class="muted">暂无 OTA 文件。</p>
+        </div>
+      </section>
+
       <section class="panel zigbee-devices-panel">
         <div class="panel-title">
           <h2>设备记录</h2>
