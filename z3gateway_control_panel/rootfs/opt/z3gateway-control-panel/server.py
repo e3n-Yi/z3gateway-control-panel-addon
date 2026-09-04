@@ -28,7 +28,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -81,6 +81,10 @@ DEFAULT_SERIAL_PORT = os.environ.get("Z3_PANEL_DEFAULT_SERIAL_PORT", "")
 CONFIGURED_SERIAL_PORT = os.environ.get("Z3_PANEL_CONFIGURED_SERIAL_PORT", DEFAULT_SERIAL_PORT)
 DEFAULT_NETWORK_INDEX = os.environ.get("Z3_PANEL_DEFAULT_NETWORK_INDEX", "1")
 DEFAULT_BAUD_RATE = os.environ.get("Z3_PANEL_DEFAULT_BAUD_RATE", "115200")
+OTA_DIR = Path(os.environ.get("Z3_PANEL_OTA_DIR", str(GATEWAY_ROOT / "build" / "debug" / "ota-files"))).expanduser().resolve()
+OTA_UPLOAD_MAX_BYTES = int(os.environ.get("Z3_PANEL_OTA_UPLOAD_MAX_BYTES", str(512 * 1024 * 1024)))
+OTA_COPY_CHUNK_BYTES = 64 * 1024
+OTA_FILE_LOCK = threading.RLock()
 CALIBRATION_SERIAL_PORT = os.environ.get("Z3_PANEL_CALIBRATION_SERIAL_PORT", "")
 CALIBRATION_BAUD_RATE = 9600
 ZERO_CROSS_HALF_CYCLE_US = 10000
@@ -1282,6 +1286,151 @@ def list_serial_devices() -> list[dict[str, str]]:
     return devices
 
 
+
+class ChunkedRequestReader:
+    """Decode an HTTP/1.1 chunked request body from BaseHTTPRequestHandler.rfile."""
+
+    def __init__(self, source: Any):
+        self.source = source
+        self.chunk_remaining = 0
+        self.finished = False
+
+    def _readline(self) -> bytes:
+        line = self.source.readline(4097)
+        if not line or len(line) > 4096 or not line.endswith(b"\n"):
+            raise ValueError("invalid chunked upload framing")
+        return line
+
+    def _start_chunk(self) -> None:
+        raw_size = self._readline().strip().split(b";", 1)[0]
+        try:
+            size = int(raw_size, 16)
+        except ValueError as exc:
+            raise ValueError("invalid chunked upload size") from exc
+        if size < 0:
+            raise ValueError("invalid chunked upload size")
+        if size == 0:
+            while self._readline().strip():
+                pass
+            self.finished = True
+            return
+        self.chunk_remaining = size
+
+    def read(self, size: int) -> bytes:
+        output = bytearray()
+        while len(output) < size and not self.finished:
+            if self.chunk_remaining == 0:
+                self._start_chunk()
+                if self.finished:
+                    break
+            wanted = min(size - len(output), self.chunk_remaining)
+            data = self.source.read(wanted)
+            if not data:
+                raise ValueError("upload ended inside a chunk")
+            output.extend(data)
+            self.chunk_remaining -= len(data)
+            if self.chunk_remaining == 0 and self.source.read(2) != b"\r\n":
+                raise ValueError("invalid chunked upload delimiter")
+        return bytes(output)
+
+    def finish(self) -> None:
+        if self.read(1):
+            raise ValueError("upload contains more data than declared")
+        if not self.finished:
+            raise ValueError("incomplete chunked upload")
+
+
+class OtaFileExistsError(ValueError):
+    pass
+
+
+class OtaFileTooLargeError(ValueError):
+    pass
+
+
+def validate_ota_filename(raw_name: str) -> str:
+    name = unquote(str(raw_name or ""))
+    encoded = name.encode("utf-8")
+    if (
+        not name
+        or name in {".", ".."}
+        or name.startswith(".upload-")
+        or "/" in name
+        or "\\" in name
+        or any(ord(char) < 32 or ord(char) == 127 for char in name)
+        or len(encoded) > 240
+    ):
+        raise ValueError("invalid OTA filename")
+    return name
+
+
+def ota_file_info(path: Path) -> dict[str, Any]:
+    stat = path.stat()
+    return {
+        "name": path.name,
+        "size": stat.st_size,
+        "modified": datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def list_ota_files() -> list[dict[str, Any]]:
+    OTA_DIR.mkdir(parents=True, exist_ok=True)
+    files: list[dict[str, Any]] = []
+    for entry in OTA_DIR.iterdir():
+        try:
+            if entry.name.startswith(".upload-") or entry.is_symlink() or not entry.is_file():
+                continue
+            files.append(ota_file_info(entry))
+        except OSError:
+            continue
+    return sorted(files, key=lambda item: item["name"].lower())
+
+
+def write_ota_file(name: str, source: Any, length: int, *, overwrite: bool = False) -> dict[str, Any]:
+    filename = validate_ota_filename(name)
+    if length <= 0:
+        raise ValueError("OTA file is empty")
+    if length > OTA_UPLOAD_MAX_BYTES:
+        raise OtaFileTooLargeError(f"OTA file exceeds {OTA_UPLOAD_MAX_BYTES} bytes")
+    OTA_DIR.mkdir(parents=True, exist_ok=True)
+    temporary = OTA_DIR / f".upload-{uuid.uuid4().hex}.tmp"
+    target = OTA_DIR / filename
+    remaining = length
+    try:
+        with temporary.open("xb") as output:
+            while remaining:
+                chunk = source.read(min(OTA_COPY_CHUNK_BYTES, remaining))
+                if not chunk:
+                    raise ValueError("upload ended before the declared file size")
+                output.write(chunk)
+                remaining -= len(chunk)
+            finish = getattr(source, "finish", None)
+            if finish is not None:
+                finish()
+            output.flush()
+            os.fsync(output.fileno())
+        with OTA_FILE_LOCK:
+            if (target.exists() or target.is_symlink()) and not overwrite:
+                raise OtaFileExistsError("an OTA file with this name already exists")
+            os.replace(temporary, target)
+        return ota_file_info(target)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def delete_ota_file(name: str) -> str:
+    filename = validate_ota_filename(name)
+    target = OTA_DIR / filename
+    with OTA_FILE_LOCK:
+        if target.is_symlink() or not target.is_file():
+            raise FileNotFoundError("OTA file not found")
+        target.unlink()
+    return filename
+
+
 def browse_directory(raw_path: str | None) -> dict[str, Any]:
     path = Path(unquote(raw_path or str(ALLOWED_ROOT))).expanduser()
     if not path.is_absolute():
@@ -1330,6 +1479,64 @@ class RequestHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         print(f"{self.address_string()} - {fmt % args}")
 
+    def handle_ota_upload(self, parsed: Any) -> None:
+        prefix = "/api/ota/files/"
+        if not parsed.path.startswith(prefix):
+            self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        declared_size = self.headers.get("X-OTA-File-Size")
+        content_length = self.headers.get("Content-Length")
+        if declared_size is None and content_length is None:
+            raise ValueError("upload size is required")
+        try:
+            length = int(declared_size if declared_size is not None else content_length)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("invalid upload size") from exc
+        if content_length is not None and "chunked" not in self.headers.get("Transfer-Encoding", "").lower():
+            try:
+                if int(content_length) != length:
+                    raise ValueError("upload size does not match Content-Length")
+            except ValueError as exc:
+                if str(exc) == "upload size does not match Content-Length":
+                    raise
+                raise ValueError("invalid Content-Length") from exc
+        body = self.rfile
+        if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+            body = ChunkedRequestReader(self.rfile)
+        overwrite = parse_qs(parsed.query).get("overwrite", ["0"])[0] == "1"
+        info = write_ota_file(parsed.path[len(prefix):], body, length, overwrite=overwrite)
+        self.send_json({"file": info}, status=HTTPStatus.CREATED)
+
+    def do_PUT(self) -> None:
+        try:
+            self.handle_ota_upload(urlparse(self.path))
+        except OtaFileExistsError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.CONFLICT)
+        except OtaFileTooLargeError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            traceback.print_exc()
+            self.send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def do_DELETE(self) -> None:
+        try:
+            parsed = urlparse(self.path)
+            prefix = "/api/ota/files/"
+            if not parsed.path.startswith(prefix):
+                self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            filename = delete_ota_file(parsed.path[len(prefix):])
+            self.send_json({"deleted": filename})
+        except FileNotFoundError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            traceback.print_exc()
+            self.send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
     def do_GET(self) -> None:
         try:
             parsed = urlparse(self.path)
@@ -1349,8 +1556,15 @@ class RequestHandler(BaseHTTPRequestHandler):
             if not parsed.path.startswith("/api/"):
                 self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
                 return
+            if parsed.path.startswith("/api/ota/files/"):
+                self.handle_ota_upload(parsed)
+                return
             payload = self.read_json_body()
             self.handle_api_post(parsed.path, payload)
+        except OtaFileExistsError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.CONFLICT)
+        except OtaFileTooLargeError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
         except Exception as exc:
@@ -1368,6 +1582,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json({"devices": zigbee_registry.list_devices()})
         elif path == "/api/commands":
             self.send_json(read_json_file(COMMANDS_FILE, {"groups": []}))
+        elif path == "/api/ota/files":
+            self.send_json({"directory": str(OTA_DIR), "max_upload_bytes": OTA_UPLOAD_MAX_BYTES, "files": list_ota_files()})
+        elif path.startswith("/api/ota/files/"):
+            self.send_ota_file(path[len("/api/ota/files/"):])
         elif path == "/api/browse":
             raw_path = query.get("path", [str(ALLOWED_ROOT)])[0]
             self.send_json(browse_directory(raw_path))
@@ -1397,6 +1615,26 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json({"devices": zigbee_registry.list_devices()})
         else:
             self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+
+    def send_ota_file(self, raw_name: str) -> None:
+        try:
+            filename = validate_ota_filename(raw_name)
+            target = OTA_DIR / filename
+            if target.is_symlink() or not target.is_file():
+                self.send_json({"error": "OTA file not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            stat = target.stat()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(filename)}")
+            self.send_header("Content-Length", str(stat.st_size))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            with target.open("rb") as source:
+                while chunk := source.read(OTA_COPY_CHUNK_BYTES):
+                    self.wfile.write(chunk)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
     def handle_static(self, path: str) -> None:
         if path in ("", "/"):
@@ -1479,6 +1717,7 @@ def main() -> None:
     print(f"Gateway root: {GATEWAY_ROOT}")
     print(f"Allowed browser root: {ALLOWED_ROOT}")
     print(f"Data dir: {DATA_DIR}")
+    print(f"OTA dir: {OTA_DIR}")
     print(f"Default executable: {DEFAULT_EXECUTABLE}")
     print(f"Configured serial: {CONFIGURED_SERIAL_PORT or '-'}")
     print(f"Default serial: {DEFAULT_SERIAL_PORT or '-'}")
