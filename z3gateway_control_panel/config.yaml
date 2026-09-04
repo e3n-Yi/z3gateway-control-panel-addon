@@ -1,5 +1,5 @@
 name: Z3Gateway Control Panel
-version: "0.1.17"
+version: "0.1.18"
 slug: z3gateway_control_panel
 description: Local web control panel for Silicon Labs zigbee_z3_gateway host.
 arch:
@@ -8,6 +8,7 @@ startup: application
 boot: auto
 init: false
 ingress: true
+ingress_stream: true
 ingress_port: 8765
 panel_icon: mdi:zigbee
 panel_title: Z3Gateway
