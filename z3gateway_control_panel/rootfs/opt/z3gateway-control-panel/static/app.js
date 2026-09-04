@@ -43,6 +43,8 @@ const state = {
   liveTimers: new Set(),
   pageActive: true,
   panelIntersecting: true,
+  otaFiles: [],
+  otaUploading: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1159,6 +1161,138 @@ function closeFilePicker() {
   if (modal) modal.classList.add("hidden");
 }
 
+function formatFileSize(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB"];
+  let size = value / 1024;
+  let unit = units[0];
+  for (let index = 1; index < units.length && size >= 1024; index += 1) {
+    size /= 1024;
+    unit = units[index];
+  }
+  return `${size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${unit}`;
+}
+
+function formatFileTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function renderOtaFiles() {
+  const list = $("ota-file-list");
+  list.innerHTML = "";
+  if (!state.otaFiles.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "暂无 OTA 文件。";
+    list.appendChild(empty);
+    return;
+  }
+  for (const file of state.otaFiles) {
+    const row = document.createElement("div");
+    row.className = "ota-file-row";
+    const info = document.createElement("div");
+    const name = document.createElement("strong");
+    name.className = "ota-file-name";
+    name.textContent = file.name;
+    const meta = document.createElement("span");
+    meta.className = "ota-file-meta";
+    meta.textContent = `${formatFileSize(file.size)} · ${formatFileTime(file.modified)}`;
+    info.append(name, meta);
+    const actions = document.createElement("div");
+    actions.className = "ota-file-actions";
+    const download = document.createElement("a");
+    download.className = "ota-download";
+    download.textContent = "下载";
+    download.href = appUrl(`/api/ota/files/${encodeURIComponent(file.name)}`);
+    download.download = file.name;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "ghost danger-text";
+    remove.textContent = "删除";
+    remove.disabled = state.otaUploading;
+    remove.addEventListener("click", () => deleteOtaFile(file).catch((err) => toast(err.message)));
+    actions.append(download, remove);
+    row.append(info, actions);
+    list.appendChild(row);
+  }
+}
+
+async function refreshOtaFiles() {
+  const data = await api("/api/ota/files");
+  state.otaFiles = Array.isArray(data.files) ? data.files : [];
+  $("ota-directory").textContent = data.directory || "build/debug/ota-files";
+  $("ota-drop-zone").title = data.max_upload_bytes
+    ? `单个文件最大 ${formatFileSize(data.max_upload_bytes)}`
+    : "";
+  renderOtaFiles();
+}
+
+function setOtaUploadProgress(file, index, total, loaded, size) {
+  const progress = $("ota-progress");
+  progress.classList.remove("hidden");
+  const percent = size ? Math.min(100, Math.round((loaded / size) * 100)) : 0;
+  $("ota-progress-label").textContent = `${index + 1}/${total} ${file.name} · ${formatFileSize(loaded)} / ${formatFileSize(size)}`;
+  $("ota-progress-percent").textContent = `${percent}%`;
+  $("ota-progress-bar").value = percent;
+}
+
+function uploadOtaFile(file, { overwrite = false, index = 0, total = 1 } = {}) {
+  return new Promise((resolve, reject) => {
+    const suffix = overwrite ? "?overwrite=1" : "";
+    const request = new XMLHttpRequest();
+    request.open("POST", appUrl(`/api/ota/files/${encodeURIComponent(file.name)}${suffix}`));
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.setRequestHeader("X-OTA-File-Size", String(file.size));
+    request.upload.addEventListener("progress", (event) => {
+      setOtaUploadProgress(file, index, total, event.loaded, event.total || file.size);
+    });
+    request.addEventListener("load", () => {
+      let data = {};
+      try { data = JSON.parse(request.responseText || "{}"); } catch { /* Use status text below. */ }
+      if (request.status >= 200 && request.status < 300) resolve(data.file || {});
+      else reject(new Error(data.error || `${request.status} ${request.statusText}`));
+    });
+    request.addEventListener("error", () => reject(new Error("上传连接失败")));
+    request.addEventListener("abort", () => reject(new Error("上传已取消")));
+    setOtaUploadProgress(file, index, total, 0, file.size);
+    request.send(file);
+  });
+}
+
+async function uploadOtaFiles(fileList) {
+  const files = Array.from(fileList || []).filter((file) => file && file.name);
+  if (!files.length || state.otaUploading) return;
+  state.otaUploading = true;
+  $("ota-choose").disabled = true;
+  renderOtaFiles();
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      const exists = state.otaFiles.some((item) => item.name === file.name);
+      if (exists && !window.confirm(`OTA 文件 ${file.name} 已存在，是否覆盖？`)) continue;
+      await uploadOtaFile(file, { overwrite: exists, index, total: files.length });
+      await refreshOtaFiles();
+    }
+    toast(files.length === 1 ? "OTA 文件上传完成" : "OTA 文件上传完成");
+  } finally {
+    state.otaUploading = false;
+    $("ota-choose").disabled = false;
+    $("ota-file-input").value = "";
+    renderOtaFiles();
+    setTimeout(() => $("ota-progress").classList.add("hidden"), 800);
+  }
+}
+
+async function deleteOtaFile(file) {
+  if (!window.confirm(`删除 OTA 文件？\n\n${file.name}`)) return;
+  await api(`/api/ota/files/${encodeURIComponent(file.name)}`, { method: "DELETE" });
+  await refreshOtaFiles();
+  toast("OTA 文件已删除");
+}
+
 async function startGateway() {
   const payload = {
     executable: $("executable").value.trim(),
@@ -1438,6 +1572,39 @@ function wireEvents() {
       .then(() => toast("设备记录已从历史日志重扫"))
       .catch((err) => toast(err.message));
   });
+  $("ota-refresh").addEventListener("click", () => refreshOtaFiles().catch((err) => toast(err.message)));
+  $("ota-choose").addEventListener("click", (event) => {
+    event.stopPropagation();
+    $("ota-file-input").click();
+  });
+  $("ota-file-input").addEventListener("change", (event) => {
+    uploadOtaFiles(event.target.files).catch((err) => toast(err.message));
+  });
+  const otaDropZone = $("ota-drop-zone");
+  otaDropZone.addEventListener("click", (event) => {
+    if (event.target !== $("ota-choose")) $("ota-file-input").click();
+  });
+  otaDropZone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      $("ota-file-input").click();
+    }
+  });
+  for (const eventName of ["dragenter", "dragover"]) {
+    otaDropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      if (!state.otaUploading) otaDropZone.classList.add("dragover");
+    });
+  }
+  for (const eventName of ["dragleave", "drop"]) {
+    otaDropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      otaDropZone.classList.remove("dragover");
+    });
+  }
+  otaDropZone.addEventListener("drop", (event) => {
+    uploadOtaFiles(event.dataTransfer.files).catch((err) => toast(err.message));
+  });
   $("start-btn").addEventListener("click", () => startGateway().catch((err) => toast(err.message)));
   $("stop-btn").addEventListener("click", () => stopGateway().catch((err) => toast(err.message)));
   $("browse-default").addEventListener("click", (event) => {
@@ -1479,7 +1646,7 @@ async function init() {
   loadZeroCrossSettings();
   wireEvents();
   watchPanelVisibility();
-  await Promise.all([refreshStatus(), refreshDevices(), loadCommands(), loadZigbeeDevices(), refreshZeroCrossStatus()]);
+  await Promise.all([refreshStatus(), refreshDevices(), loadCommands(), loadZigbeeDevices(), refreshZeroCrossStatus(), refreshOtaFiles()]);
   if (state.status.default_executable) {
     $("executable").value = state.status.default_executable;
   }
