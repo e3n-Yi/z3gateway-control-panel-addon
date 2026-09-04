@@ -20,3 +20,9 @@ The add-on enables Home Assistant Ingress. Optional direct port `8765/tcp` is di
 ## Zero-cross calibration
 
 Configure `calibration_serial_port`, start the gateway, open a device detail drawer, then use **开始自动校准**. The add-on toggles the target device, reads `55 AA` instrument frames, and sends `raw 0xEEEE` calibration commands when a measured value is greater than 500 us.
+
+## OTA files
+
+Open **OTA 文件** in the Z3Gateway panel, then drag files into the upload area or choose one or more files. Uploaded files are immediately available to the gateway in `build/debug/ota-files`; use the existing gateway OTA commands afterward.
+
+Files are persisted under `/data/ota-files`, survive add-on restarts and upgrades, and can be downloaded or deleted from the same panel. The maximum size of one file is 512 MB. Uploading the same filename asks before replacing it.
