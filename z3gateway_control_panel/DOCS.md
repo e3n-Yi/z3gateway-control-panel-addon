@@ -23,6 +23,6 @@ Configure `calibration_serial_port`, start the gateway, open a device detail dra
 
 ## OTA files
 
-Open **OTA 文件** in the Z3Gateway panel, then drag files into the upload area or choose one or more files. Uploaded files are immediately available to the gateway in `build/debug/ota-files`; use the existing gateway OTA commands afterward.
+Open **OTA 文件** in the Z3Gateway panel, then drag files into the upload area or choose one or more files. The gateway starts with `-d /data/ota-files`, so its OTA scanner uses the same directory as uploads. After uploading, replacing, or deleting an image, stop and start the gateway to rebuild its image index, then use the existing OTA commands.
 
 Files are persisted under `/data/ota-files`, survive add-on restarts and upgrades, and can be downloaded or deleted from the same panel. The maximum size of one file is 512 MB. Uploading the same filename asks before replacing it.
