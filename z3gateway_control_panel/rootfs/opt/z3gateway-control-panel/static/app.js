@@ -1656,3 +1656,40 @@ async function init() {
 }
 
 init().catch((err) => toast(err.message));
+
+(() => {
+  const focusButton = document.getElementById('focus-log');
+  const output = document.getElementById('log-output');
+  let previousFocus = null;
+  function setLogFocus(active) {
+    const followTail = output.scrollHeight - output.scrollTop - output.clientHeight < 40;
+    const scrollTop = output.scrollTop;
+    if (active) previousFocus = document.activeElement;
+    document.body.classList.toggle('log-focus', active);
+    focusButton.setAttribute('aria-pressed', String(active));
+    focusButton.textContent = active ? '退出专注' : '专注日志';
+    output.scrollTop = followTail ? output.scrollHeight : scrollTop;
+    if (active) focusButton.focus();
+    else previousFocus?.focus();
+  }
+  focusButton.addEventListener('click', () => setLogFocus(!document.body.classList.contains('log-focus')));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.body.classList.contains('log-focus')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setLogFocus(false);
+    }
+  }, true);
+  const tabs = [...document.querySelectorAll('[data-view]')];
+  function showView(view) {
+    tabs.forEach(tab => {
+      const active = tab.dataset.view === view;
+      tab.setAttribute('aria-selected', String(active));
+      document.getElementById(tab.getAttribute('aria-controls')).hidden = !active;
+    });
+  }
+  tabs.forEach(tab => tab.addEventListener('click', () => showView(tab.dataset.view)));
+  document.getElementById('zigbee-device-list').addEventListener('click', event => {
+    if (event.target.closest('.zigbee-device')) showView('console');
+  });
+})();
