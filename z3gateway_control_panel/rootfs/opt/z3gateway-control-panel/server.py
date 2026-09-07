@@ -552,7 +552,11 @@ class GatewayManager:
                 raise ValueError("baud rate must be a number")
 
             master_fd, slave_fd = pty.openpty()
-            args = [str(exe_path), "-n", network_index, "-p", serial_port, "-b", baud_rate]
+            # The SDK otherwise scans ./ota-files relative to cwd, which is
+            # the project root, not build/debug where uploads used to be linked.
+            OTA_DIR.mkdir(parents=True, exist_ok=True)
+            args = [str(exe_path), "-n", network_index, "-p", serial_port, "-b", baud_rate,
+                    "-d", str(OTA_DIR)]
             cwd = str(infer_workdir(exe_path))
             session_id = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:8]
             self.session_log = LOG_DIR / f"gateway-{session_id}.log"
