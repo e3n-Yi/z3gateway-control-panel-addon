@@ -1237,7 +1237,7 @@ button svg { display:block; flex-shrink:0; width:16px; height:16px; }
  .command-list { grid-template-columns:1fr; }.settings-workspace { grid-template-columns:1fr; }
  .drawer-title { padding:16px; }.drawer-form,.drawer-footer { padding:16px; }
 }
-@media (max-width:700px) {
+@media (max-width:900px) {
  .topbar { flex-direction:row; align-items:center; padding:16px; }.connection { order:3; flex-basis:100%; }
  .preview-badge { font-size:11px; }.brand-mark { width:36px;height:36px; }.topbar h1 { font-size:19px; }
  .workspace-nav { padding:10px 12px; }.workspace-nav button { padding:8px 10px; }
@@ -1286,7 +1286,7 @@ body.log-focus .toast { z-index:110; }
  .log-panel .toolbar { gap:6px; }
  #log-search { width:160px; }
 }
-@media (max-width:700px) {
+@media (max-width:900px) {
  .topbar { padding:12px; }.workspace-nav { padding:8px 12px; }
  .layout,.layout.drawer-open { padding:12px; }
  .command-panel { height:220px; }
@@ -1327,22 +1327,55 @@ body:not(.log-focus) #log-output { flex:1 1 0; height:auto; min-height:0; resize
 .workspace:not(.console-workspace) { height:100%; overflow:auto; overscroll-behavior:contain; padding-bottom:12px; scrollbar-gutter:stable; }
 .single-workspace>.panel { min-height:0; }
 .settings-workspace { align-content:start; }
-@media (max-width:1000px) and (min-width:701px) {
+@media (max-width:1000px) and (min-width:901px) {
  .console-workspace { grid-template-rows:232px minmax(0,1fr) auto; }
  .topbar { padding:8px 18px; }.preview-badge { display:none; }
  .drawer-title h3 { flex-basis:120px; }
 }
 /* Short/mobile frames scroll inside .layout; header and navigation stay put. */
-@media (max-width:700px), (max-height:620px) {
+@media (max-width:900px), (max-height:620px) {
  .layout,.layout.drawer-open { overflow:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
  .console-workspace { height:auto; grid-template-rows:auto auto auto; }
  .command-panel,.command-drawer,.layout.drawer-open .command-drawer { height:250px; }
  body:not(.log-focus) #log-output { height:65vh; height:65dvh; min-height:320px; flex:none; }
  .workspace:not(.console-workspace) { height:auto; overflow:visible; }
 }
-@media (max-width:700px) {
+@media (max-width:900px) {
  .console-workspace { grid-template-rows:auto auto auto auto; }
  .manual-panel[open] { display:block; }.manual-panel[open] .panel-title { justify-content:flex-end; }
  .topbar { gap:8px; }.brand>div>p { display:none; }
  .connection { gap:8px; }.workspace-caption,.preview-badge { display:none; }
+}
+
+/* Full-height command inspector: keep multi-field forms beside the log. */
+@media (min-width:901px) and (min-height:621px) {
+ .console-workspace {
+  grid-template-columns:minmax(0,1fr) clamp(320px,29vw,440px);
+  grid-template-areas:'command detail' 'log detail' 'manual detail';
+  grid-template-rows:clamp(190px,23vh,232px) minmax(0,1fr) auto;
+ }
+ .layout:not(.drawer-open) .console-workspace {
+  grid-template-columns:minmax(0,1fr);
+  grid-template-areas:'command' 'log' 'manual';
+ }
+ .command-drawer,.layout.drawer-open .command-drawer { height:100%; }
+ .drawer-title { align-items:center; }
+ .drawer-title h3 { flex:1 1 120px; }
+ .drawer-form { padding:16px; }
+ .drawer-form>.field { margin-bottom:16px; }
+ .drawer-footer { grid-template-columns:minmax(0,1fr); gap:12px; padding:16px; }
+ #command-preview { height:96px; min-height:72px; max-height:160px; }
+ #send-selected { width:100%; min-height:42px; height:42px; }
+ .command-panel .tabs { max-height:76px; }
+ .log-panel>.panel-title { gap:8px; }
+ .log-panel .toolbar { gap:6px; }
+ #log-search { width:150px; }
+}
+@media (max-width:900px), (max-height:620px) {
+ .command-drawer,.layout.drawer-open .command-drawer {
+  height:clamp(420px,75dvh,760px);
+ }
+ .drawer-footer { grid-template-columns:minmax(0,1fr); }
+ #command-preview { height:80px; }
+ #send-selected { width:100%; }
 }
