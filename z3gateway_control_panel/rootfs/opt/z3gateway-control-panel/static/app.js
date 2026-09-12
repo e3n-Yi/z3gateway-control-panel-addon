@@ -1365,6 +1365,7 @@ async function leaveSelectedDevice(device) {
 
 async function sendSelected() {
   const cmd = state.selectedCommand;
+  if (cmd?.id === "device_table") { document.getElementById("tab-devices").click(); return; }
   if (!cmd) return;
   const missing = missingFields(cmd);
   if (missing.length) {

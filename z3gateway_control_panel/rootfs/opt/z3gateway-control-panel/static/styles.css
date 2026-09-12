@@ -1379,3 +1379,36 @@ body:not(.log-focus) #log-output { flex:1 1 0; height:auto; min-height:0; resize
  #command-preview { height:80px; }
  #send-selected { width:100%; }
 }
+
+/* Device center shares one bounded application log stream. */
+#view-devices {max-width:none;overflow:hidden;padding-bottom:0;}
+#view-devices>.zigbee-devices-panel {display:none;}
+#device-center {height:100%;min-height:0;display:grid;grid-template-columns:300px minmax(0,1fr);gap:12px;}
+.dc-list {display:flex;flex-direction:column;min-height:0;padding:16px;}
+#dc-search {width:100%;min-height:40px;flex-shrink:0;}
+#dc-cards {overflow:auto;min-height:0;margin-top:12px;overscroll-behavior:contain;}
+.dc-card {display:flex;flex-direction:column;align-items:flex-start;text-align:left;white-space:normal;width:100%;gap:6px;margin-bottom:8px;padding:12px;overflow-wrap:anywhere;}
+.dc-card span,.dc-card small {color:var(--muted);font-size:12px;}
+.dc-card.active {background:#edf4fd;border-color:var(--primary);}
+.dc-main {min-width:0;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) clamp(320px,30vw,440px);gap:12px;}
+.dc-detail {grid-column:2;grid-row:1;min-height:0;display:flex;flex-direction:column;padding:16px;}
+#dc-identity {flex-shrink:0;overflow-wrap:anywhere;}
+#dc-identity p {font-size:12px;color:var(--muted);margin-top:6px;}
+#dc-tabs {flex-shrink:0;gap:3px;}
+#dc-content {overflow:auto;min-height:0;overscroll-behavior:contain;padding-right:4px;}
+#dc-content dl {display:grid;grid-template-columns:90px minmax(0,1fr);gap:12px;margin:18px 0;}
+#dc-content dd {margin:0;overflow-wrap:anywhere;}
+#dc-content .field {margin:12px 0;}
+#dc-content input,#dc-content select {width:100%;min-height:40px;}
+#dc-content pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;}
+.dc-name {display:flex;gap:6px;}
+.dc-command-picker {display:flex;flex-wrap:wrap;gap:6px;}
+#dc-execute {position:sticky;bottom:0;width:100%;margin-top:12px;}
+.dc-log-panel {grid-column:1;grid-row:1;display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden;}
+.dc-log-panel>.panel-title {padding:12px;margin:0;flex-shrink:0;}
+#dc-log {flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;background:var(--code);color:var(--code-text);padding:16px;margin:0;font-size:13px;line-height:1.65;}
+.dc-focus .dc-log-panel {position:fixed;inset:12px;z-index:100;box-shadow:0 0 0 24px var(--bg);}
+@media(max-width:1200px) {.dc-main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(260px,45%) minmax(0,1fr);}.dc-detail{grid-column:1;grid-row:1;}.dc-log-panel{grid-row:2;}#device-center{grid-template-columns:240px minmax(0,1fr);}}
+@media(max-width:900px),(max-height:620px) {#view-devices{overflow:visible;}#device-center{height:auto;display:block;}.dc-list{max-height:280px;margin-bottom:12px;}.dc-main{display:flex;flex-direction:column;}.dc-detail{height:65dvh;min-height:420px;}.dc-log-panel{height:65dvh;min-height:320px;}}
+
+#dc-search,#dc-content select {border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--panel);color:var(--text);font:inherit;line-height:1.5;}

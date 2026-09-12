@@ -16,6 +16,7 @@ import queue
 import re
 import select
 import signal
+import sys
 import subprocess
 import termios
 import threading
@@ -32,6 +33,9 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 APP_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(APP_DIR))
+from device_center import DeviceCenter, ota_header
+
 STATIC_DIR = APP_DIR / "static"
 CONFIG_DIR = APP_DIR / "config"
 DATA_DIR = Path(os.environ.get("Z3_PANEL_DATA_DIR", str(APP_DIR / "data"))).expanduser().resolve()
@@ -475,6 +479,7 @@ class GatewayManager:
     def __init__(self) -> None:
         self.lock = threading.RLock()
         self.command_lock = threading.RLock()
+        self.command_error_seq = 0
         self.prompt_condition = threading.Condition()
         self.prompt_seq = 0
         self.output_tail = ""
@@ -677,13 +682,17 @@ class GatewayManager:
             total = len(lines)
             for index, line in enumerate(lines, start=1):
                 baseline_prompt_seq = self._prompt_seq()
+                baseline_error_seq = self.command_error_seq
                 self._send_single_command(
                     line,
                     "send",
                     {"sequence_index": index, "sequence_total": total} if total > 1 else {},
                 )
                 if index < total:
-                    self._wait_for_prompt_after(baseline_prompt_seq, prompt_timeout)
+                    if not self._wait_for_prompt_after(baseline_prompt_seq, prompt_timeout):
+                        raise ValueError("gateway prompt timeout; command sequence aborted")
+                    if self.command_error_seq != baseline_error_seq:
+                        raise ValueError("gateway rejected command; remaining sequence aborted")
                     if inter_command_delay > 0:
                         time.sleep(inter_command_delay)
         return {"ok": True}
@@ -835,6 +844,10 @@ class GatewayManager:
                         except queue.Empty:
                             break
                     q.put_nowait(self._log_snapshot())
+        if kind == "output" and re.search(r"(?i)(invalid|unknown command|no such command|wrong number|error:|argument.*error)", text):
+            self.command_error_seq += 1
+        if kind == "output" and "device_center" in globals():
+            device_center.feed(text, self.session_id)
         joined_node_ids: set[str] = set()
         try:
             joined_node_ids = zigbee_registry.parse_text(text, event["ts"])
@@ -1260,6 +1273,7 @@ class ZeroCrossCalibrator:
 
 
 zero_cross_calibrator = ZeroCrossCalibrator(manager)
+device_center = DeviceCenter(DATA_DIR, manager, read_json_file(COMMANDS_FILE, {"groups": []}), OTA_DIR, zigbee_registry.list_devices())
 
 
 def list_serial_devices() -> list[dict[str, str]]:
@@ -1371,11 +1385,16 @@ def validate_ota_filename(raw_name: str) -> str:
 
 def ota_file_info(path: Path) -> dict[str, Any]:
     stat = path.stat()
-    return {
+    info = {
         "name": path.name,
         "size": stat.st_size,
         "modified": datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat(timespec="seconds"),
     }
+    try:
+        info["image"] = ota_header(path)
+    except (OSError, ValueError):
+        info["image"] = None
+    return info
 
 
 def list_ota_files() -> list[dict[str, Any]]:
@@ -1577,14 +1596,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def handle_api_get(self, path: str, query: dict[str, list[str]]) -> None:
-        if path == "/api/status":
+        if path == "/api/device-center":
+            self.send_json({"devices": device_center.list(), "commands": list(device_center.commands.values()), "defaults": device_center.catalog.get("parameter_defaults", {})})
+        elif path.startswith("/api/device-center/"):
+            key = path.split("/")[3]
+            self.send_json(device_center.snapshot(key))
+        elif path == "/api/status":
             self.send_json(manager.status())
         elif path == "/api/zerocross/status":
             self.send_json(zero_cross_calibrator.status())
         elif path == "/api/devices":
             self.send_json({"devices": list_serial_devices()})
         elif path == "/api/zigbee/devices":
-            self.send_json({"devices": zigbee_registry.list_devices()})
+            self.send_json({"devices": device_center.list()})
         elif path == "/api/commands":
             self.send_json(read_json_file(COMMANDS_FILE, {"groups": []}))
         elif path == "/api/ota/files":
@@ -1602,9 +1626,34 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
     def handle_api_post(self, path: str, payload: dict[str, Any]) -> None:
-        if path == "/api/start":
-            self.send_json(manager.start(payload))
+        if path.startswith("/api/device-center/"):
+            parts = path.strip("/").split("/")
+            if len(parts) != 4:
+                raise ValueError("invalid device route")
+            key, action = parts[2:]
+            if action == "delete":
+                self.send_json(device_center.delete(key))
+            elif action == "rename":
+                self.send_json(device_center.update_name(key, payload.get("name")))
+            elif action == "refresh":
+                self.send_json(device_center.discover(key))
+            elif action == "preview":
+                self.send_json({"commands": device_center.build({"device": key, "action": payload.get("action"), "params": payload.get("params", {})})})
+            elif action == "operate":
+                action_id = payload.get("action")
+                if action_id not in device_center.commands:
+                    raise ValueError("unsupported device operation")
+                self.send_json(device_center.enqueue(key, action_id, payload.get("params", {})))
+            else:
+                raise ValueError("invalid device action")
+        elif path == "/api/start":
+            result = manager.start(payload)
+            device_center.session = manager.session_id
+            for device in device_center.list():
+                device_center.discover(device["id"])
+            self.send_json(result)
         elif path == "/api/stop":
+            device_center.stop()
             zero_cross_calibrator.stop("gateway-stop")
             self.send_json(manager.stop())
         elif path == "/api/zerocross/start":
@@ -1614,10 +1663,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         elif path == "/api/send":
             self.send_json(manager.send_command(str(payload.get("command") or "")))
         elif path == "/api/zigbee/devices/reparse":
-            self.send_json({"devices": zigbee_registry.rebuild_from_logs()})
+            for entry in zigbee_registry.rebuild_from_logs():
+                device_center.import_legacy(entry)
+            device_center.save()
+            self.send_json({"devices": device_center.list()})
         elif path == "/api/zigbee/devices/clear":
+            for device in device_center.list():
+                if device.get("role") != "gateway":
+                    device_center.delete(device["id"])
             zigbee_registry.clear_devices(keep_gateway=True)
-            self.send_json({"devices": zigbee_registry.list_devices()})
+            self.send_json({"devices": device_center.list()})
         else:
             self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
@@ -1730,7 +1785,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    zigbee_registry.rebuild_from_logs()
     server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), RequestHandler)
     print(f"Z3Gateway control panel: http://{DEFAULT_HOST}:{DEFAULT_PORT}")
     print(f"Gateway root: {GATEWAY_ROOT}")

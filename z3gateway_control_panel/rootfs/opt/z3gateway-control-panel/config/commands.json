@@ -94,11 +94,6 @@
           "command": "info"
         },
         {
-          "id": "device_table",
-          "label": "设备表",
-          "command": "plugin device-table print"
-        },
-        {
           "id": "neighbor_table",
           "label": "邻居表",
           "command": "plugin stack-diagnostics neighbor-table"
