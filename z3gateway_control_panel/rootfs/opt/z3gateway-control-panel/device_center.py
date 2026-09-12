@@ -162,7 +162,13 @@ class DeviceCenter:
                         del self.db['devices'][other]
                     else:
                         record['nodeId'] = None
+                        record['addressVerified'] = False
+                        record['generation'] = uuid.uuid4().hex
                         record['discovery'] = 'address-changed'
+                        for old_job in self.jobs.values():
+                            if old_job['device'] == other and old_job['state'] in {'queued','sending','waiting'}:
+                                old_job['state'] = 'cancelled'
+                                old_job['_wake'].set()
             if d.get('nodeId') and (d['nodeId'] != f'0x{node:04X}' or d.get('joined') is False):
                 d['generation'] = uuid.uuid4().hex
                 for job in self.jobs.values():

@@ -14,7 +14,7 @@
     $d('dc-cards').innerHTML=devices.filter(d=>JSON.stringify(d).toLowerCase().includes(term)).map(d=>`<button class="dc-card ${d.id===selected?'active':''}" data-device="${escape(d.id)}"><strong>${escape(d.name||d.model||d.nodeId||'待确认设备')}</strong><span>${escape([d.manufacturer,d.model].filter(Boolean).join(' · ')||'资料待读取')}</span><span>${escape(d.deviceType||'类型未知')} · ${escape(d.networkRole||'角色未知')}</span><code>${escape(d.eui64||'IEEE 待确认')}</code><small>${escape(d.joined===false?'已离网':d.discovery||'pending')} · ${escape(d.lastSeen||'尚无通信')}</small></button>`).join('')||'<p class="muted">暂无设备，请在网关设置中启动网关并开放入网。</p>';
   }
   async function refresh(){
-    if(busy||document.hidden||document.getElementById('view-devices').hidden) return;
+    if(busy||!panelIsVisible()||document.getElementById('view-devices').hidden) return;
     busy=true;
     try {
       const data=await api('/api/device-center');devices=data.devices;commands=data.commands;defaults=data.defaults;
