@@ -226,7 +226,7 @@
         {
           "id": "level_move",
           "label": "亮度设置",
-          "command": "zcl level-control mv-to-level {{level}} {{transitionTime}}",
+          "command": "zcl level-control mv-to-level {{level}} {{transitionTime}} 0 0",
           "fields": [
             {
               "key": "level",

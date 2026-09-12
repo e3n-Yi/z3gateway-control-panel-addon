@@ -480,6 +480,7 @@ class GatewayManager:
         self.lock = threading.RLock()
         self.command_lock = threading.RLock()
         self.command_error_seq = 0
+        self.cli_error_tail = ""
         self.prompt_condition = threading.Condition()
         self.prompt_seq = 0
         self.output_tail = ""
@@ -844,8 +845,6 @@ class GatewayManager:
                         except queue.Empty:
                             break
                     q.put_nowait(self._log_snapshot())
-        if kind == "output" and re.search(r"(?i)(invalid|unknown command|no such command|wrong number|error:|argument.*error)", text):
-            self.command_error_seq += 1
         if kind == "output" and "device_center" in globals():
             device_center.feed(text, self.session_id)
         joined_node_ids: set[str] = set()
@@ -858,6 +857,17 @@ class GatewayManager:
             self.schedule_neighbor_table_refresh(reason)
 
     def _track_gateway_prompt(self, text: str) -> None:
+        # Decode CLI failures before waking the sequence sender. PTY reads may
+        # split a diagnostic anywhere, including within "number of arguments".
+        error_text = self.cli_error_tail + text
+        errors = re.finditer(
+            r"(?i)(incorrect number of arguments|incorrect argument type|"
+            r"the argument is not formatted correctly|no command found|"
+            r"maximum number of arguments exceeded|input buffer is full|"
+            r"unknown error|invalid|unknown command|no such command|"
+            r"wrong number|error:|argument[^\r\n]*error)", error_text)
+        self.command_error_seq += sum(m.end() > len(self.cli_error_tail) for m in errors)
+        self.cli_error_tail = error_text[-256:]
         combined = self.output_tail + text
         prompt_count = combined.count(GATEWAY_PROMPT)
         self.output_tail = combined[-max(1, len(GATEWAY_PROMPT) - 1):]
