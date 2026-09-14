@@ -786,7 +786,8 @@ class GatewayManager:
 
     def _log_snapshot(self) -> dict[str, Any]:
         # Caller holds self.lock.
-        return {"ts": now_iso(), "kind": "snapshot", "text": "".join(event["text"] for event in self.history)}
+        return {"ts": now_iso(), "kind": "snapshot", "text": "".join(event["text"] for event in self.history),
+                "deviceEvents": [item for event in self.history for item in event.get("deviceEvents", [])][-400:]}
 
     def unsubscribe(self, q: queue.Queue[dict[str, Any]]) -> None:
         with self.lock:
@@ -822,6 +823,8 @@ class GatewayManager:
         event = {"ts": now_iso(), "kind": kind, "text": text[-LOG_EVENT_CHAR_LIMIT:]}
         if kind == "output":
             self._track_gateway_prompt(text)
+            if "device_center" in globals():
+                event["deviceEvents"] = device_center.feed(text, self.session_id)
         with self.lock:
             self.history.append(event)
             self.history_chars += len(event["text"])
@@ -845,8 +848,6 @@ class GatewayManager:
                         except queue.Empty:
                             break
                     q.put_nowait(self._log_snapshot())
-        if kind == "output" and "device_center" in globals():
-            device_center.feed(text, self.session_id)
         joined_node_ids: set[str] = set()
         try:
             joined_node_ids = zigbee_registry.parse_text(text, event["ts"])

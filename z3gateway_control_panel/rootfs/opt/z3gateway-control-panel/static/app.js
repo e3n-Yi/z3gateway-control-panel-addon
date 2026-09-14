@@ -1401,6 +1401,8 @@ function trimLogTail(text) {
   return lines.length > LOG_MAX_LINES ? lines.slice(-LOG_MAX_LINES).join("\n") : tail;
 }
 
+let deviceLogEvents = [];
+
 function flushLogs() {
   state.logRenderTimer = null;
   if (!panelIsVisible()) return;
@@ -1412,6 +1414,7 @@ function flushLogs() {
   state.logPendingChars = 0;
   output.textContent = state.logText;
   if (followTail) output.scrollTop = output.scrollHeight;
+  document.dispatchEvent(new Event("z3-log-flush"));
 }
 
 function appendLog(text) {
@@ -1457,6 +1460,7 @@ function connectLogs() {
       const payload = JSON.parse(event.data);
       // Replace on every connection/resync; never append the same history again.
       clearLogs();
+      deviceLogEvents = (payload.deviceEvents || []).slice(-400);
       appendLog(payload.text || "");
       scheduleZigbeeDeviceRefresh();
     } catch {
@@ -1473,6 +1477,7 @@ function connectLogs() {
       return;
     }
     const text = payload.text || "";
+    deviceLogEvents = deviceLogEvents.concat(payload.deviceEvents || []).slice(-400);
     appendLog(text);
     if (payload.kind === "output" && mayContainZigbeeDeviceChange(text)) {
       scheduleZigbeeDeviceRefresh();

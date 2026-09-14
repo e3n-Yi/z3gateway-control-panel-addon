@@ -83,9 +83,15 @@
   }
   function drawLog(){
     const el=$d('dc-log'),bottom=el.scrollTop+el.clientHeight>=el.scrollHeight-30;
-    const text=allLogs?state.logText:(current?.events||[]).map(e=>`${e.at} ${e.event} ep:${e.ep} cluster:0x${e.cluster.toString(16)} ${e.data}`).join('\n')+'\n'+(current?.operations||[]).filter(j=>!j.auto).map(j=>`${j.created} ${j.action}: ${j.state} ${(j.commands||[]).join(' / ')} ${j.error||''}`).join('\n');
+    if (!panelIsVisible() || document.getElementById('view-devices').hidden) return;
+    const events = new Map();
+    for (const e of [...(current?.events||[]), ...deviceLogEvents]) {
+      if (e.device===selected && e.generation===current?.device.generation) events.set(e.eventId,e);
+    }
+    const text=allLogs?state.logText:[...events.values()].sort((a,b)=>a.eventId-b.eventId).slice(-400).map(e=>`${e.at} ${e.event} ep:${e.ep} cluster:0x${e.cluster.toString(16)} ${e.data}`).join('\n')+'\n'+(current?.operations||[]).filter(j=>!j.auto).map(j=>`${j.created} ${j.action}: ${j.state} ${(j.commands||[]).join(' / ')} ${j.error||''}`).join('\n');
     if(el.textContent!==text){el.textContent=text;if(bottom)el.scrollTop=el.scrollHeight;}
   }
+  document.addEventListener('z3-log-flush', drawLog);
   root.onclick=async e=>{
     const card=e.target.closest('[data-device]');if(card){selected=card.dataset.device;current=null;tab='概览';await refresh();drawDetail();return;}
     const section=e.target.closest('[data-section]');if(section){tab=section.dataset.section;if(tab==='OTA'){try{files=(await api('/api/ota/files')).files;}catch(e){toast(e.message);}}drawDetail();return;}

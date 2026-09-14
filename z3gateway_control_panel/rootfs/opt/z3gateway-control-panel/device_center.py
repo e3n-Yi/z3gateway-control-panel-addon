@@ -60,6 +60,7 @@ class DeviceCenter:
         self.buffer = ''
         self.session = None
         self.events = deque(maxlen=400)
+        self.event_sequence = 0
         self.early = deque(maxlen=40)
         self.last_probe = {}
         self.commands = {}
@@ -369,6 +370,7 @@ class DeviceCenter:
 
     def feed(self, text, session):
         with self.lock:
+            before = self.event_sequence
             if session != self.session:
                 self.session = session
                 self.buffer = ''
@@ -386,6 +388,9 @@ class DeviceCenter:
                     self.event(json.loads(line[marker+4:]))
                 except (ValueError, KeyError, IndexError, struct.error):
                     continue
+
+        with self.lock:
+            return [dict(e) for e in self.events if e["eventId"] > before]
 
     def event(self, e):
         kind = e.get('event')
@@ -413,7 +418,8 @@ class DeviceCenter:
             d = next((v for v in self.db['devices'].values() if v.get('nodeId') == f'0x{e["node"]:04X}'), None)
             if d and kind == 'rx':
                 d['lastSeen'] = now()
-                self.events.append(dict(e, device=d['id'], at=now()))
+                self.event_sequence += 1
+                self.events.append(dict(e, device=d['id'], generation=d['generation'], eventId=self.event_sequence, at=now()))
                 if d.get('discovery') == 'partial' and time.monotonic() - self.last_probe.get(d['id'],0) > 60:
                     self.last_probe[d['id']] = time.monotonic()
                     self.discover(d['id'])
