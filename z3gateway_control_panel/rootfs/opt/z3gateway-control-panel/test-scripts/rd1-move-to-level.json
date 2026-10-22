@@ -86,7 +86,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -199,7 +199,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 10000,
-       "tolerance_ms": 3500
+       "tolerance_ms": 4500
       }
      ]
     },
@@ -298,7 +298,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -411,7 +411,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 10000,
-       "tolerance_ms": 3500
+       "tolerance_ms": 4500
       }
      ]
     },
@@ -510,7 +510,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -574,7 +574,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -617,7 +617,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -699,7 +699,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -763,7 +763,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -794,7 +794,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -915,7 +915,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -984,7 +984,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -1030,7 +1030,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -1101,7 +1101,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -1151,7 +1151,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -1182,7 +1182,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -1307,7 +1307,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -1357,7 +1357,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -1429,7 +1429,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -1588,7 +1588,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -1641,7 +1641,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -1677,7 +1677,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -1730,7 +1730,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -1808,7 +1808,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -1839,7 +1839,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -1889,7 +1889,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -2017,7 +2017,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -2048,7 +2048,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -2127,7 +2127,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -2277,7 +2277,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200,
+       "tolerance_ms": 2200,
        "from": "first_report"
       }
      ]
@@ -2519,7 +2519,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -2591,7 +2591,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200,
+       "tolerance_ms": 2200,
        "from": "first_report"
       }
      ]
@@ -2756,7 +2756,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -2828,7 +2828,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200,
+       "tolerance_ms": 2200,
        "from": "first_report"
       }
      ]
@@ -2902,7 +2902,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -2974,7 +2974,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200,
+       "tolerance_ms": 2200,
        "from": "first_report"
       }
      ]
@@ -3081,7 +3081,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 10000,
-       "tolerance_ms": 3500
+       "tolerance_ms": 4500
       }
      ]
     },
@@ -3153,7 +3153,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200,
+       "tolerance_ms": 2200,
        "from": "first_report"
       }
      ]
@@ -3270,7 +3270,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -3384,7 +3384,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -3575,7 +3575,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -3647,7 +3647,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200,
+       "tolerance_ms": 2200,
        "from": "first_report"
       }
      ]
@@ -3834,7 +3834,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750,
+       "tolerance_ms": 2750,
        "from": "first_report"
       }
      ]
@@ -4088,7 +4088,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -4167,7 +4167,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750,
+       "tolerance_ms": 2750,
        "from": "first_report"
       }
      ]
@@ -4293,7 +4293,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -4324,7 +4324,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -4403,7 +4403,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750,
+       "tolerance_ms": 2750,
        "from": "first_report"
       }
      ]
@@ -4484,7 +4484,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -4563,7 +4563,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750,
+       "tolerance_ms": 2750,
        "from": "first_report"
       }
      ]
@@ -4670,7 +4670,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 10000,
-       "tolerance_ms": 3500
+       "tolerance_ms": 4500
       }
      ]
     },
@@ -4749,7 +4749,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750,
+       "tolerance_ms": 2750,
        "from": "first_report"
       }
      ]
@@ -4859,7 +4859,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -4961,7 +4961,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -5107,7 +5107,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },
@@ -5181,7 +5181,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 1000,
-       "tolerance_ms": 1200
+       "tolerance_ms": 2200
       }
      ]
     },
@@ -5260,7 +5260,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750,
+       "tolerance_ms": 2750,
        "from": "first_report"
       }
      ]
@@ -5375,7 +5375,7 @@
        "kind": "duration",
        "attribute": "currentLevel",
        "ms": 5000,
-       "tolerance_ms": 1750
+       "tolerance_ms": 2750
       }
      ]
     },

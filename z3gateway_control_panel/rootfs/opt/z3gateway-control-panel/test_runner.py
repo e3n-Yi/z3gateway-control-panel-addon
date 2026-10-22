@@ -34,6 +34,7 @@ RESULT_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,140}$")
 SCRIPT_MAX_BYTES = 1024 * 1024
 STEP_OBSERVATION_LIMIT = 500
 RUN_EVENT_LIMIT = 20000
+RESULT_FRAME_LIMIT = 5000
 
 CLUSTER_ON_OFF = 0x0006
 CLUSTER_LEVEL = 0x0008
@@ -632,9 +633,9 @@ def evaluate_matcher(matcher: dict[str, Any], observations: list[dict[str, Any]]
         pool = reports
         if matcher.get("until") == "final_value" and "value" in matcher:
             pool = [o for o in reports if _within(o["value"], expected_value, tolerance)][:1]
-        # "from": "first_report" measures from the first report of any attribute,
-        # e.g. after a knob press whose exact moment the panel cannot see.
-        first = [o["t"] for o in observations if o["source"] == "report"]
+        # "from": "first_report" measures from the first (non-stale) report of any
+        # attribute, e.g. after a knob press whose exact moment the panel cannot see.
+        first = [o["t"] for o in observations if o["source"] == "report" and not o.get("stale")]
         origin = min(first) if matcher.get("from") == "first_report" and first else 0
         actual = pool[-1]["t"] - origin if pool else None
         start_text = "首个上报" if origin else "锚点"
@@ -644,7 +645,9 @@ def evaluate_matcher(matcher: dict[str, Any], observations: list[dict[str, Any]]
                     if actual is not None else f"没有 {attribute} 上报，无法计算时长")
     if kind == "no_report":
         within = matcher.get("within_ms")
-        pool = reports if within is None else [o for o in reports if o["t"] <= as_int(within, "within_ms")]
+        # "No initial … report" means no change report; a stale repeat does not count.
+        pool = reports if within is None else [o for o in reports
+                                               if o["t"] <= as_int(within, "within_ms") and not o.get("stale")]
         scope = "窗口内" if within is None else f"前 {as_int(within)} ms 内"
         return done(not pool, "无上报", [o["value"] for o in pool],
                     f"{scope}{'没有' if not pool else '收到'} {attribute} 上报"
@@ -704,7 +707,8 @@ class TestRunner:
                  busy_check: Callable[[], str | None] | None = None,
                  clock: Callable[[], float] = time.monotonic,
                  response_timeout: float = 3.0, tx_timeout: float = 1.0,
-                 bind_timeout: float = 5.0, inter_command_delay: float = 0.05) -> None:
+                 bind_timeout: float = 5.0, inter_command_delay: float = 0.05,
+                 prompt_timeout: float = 3.0) -> None:
         self.gateway = gateway
         self.device_center = device_center
         self.scripts = scripts
@@ -717,6 +721,8 @@ class TestRunner:
         self.tx_timeout = tx_timeout
         self.bind_timeout = bind_timeout
         self.inter_command_delay = inter_command_delay
+        # The panel default (1.2 s) is tight while the host is busy answering reports.
+        self.prompt_timeout = prompt_timeout
         self.cond = threading.Condition()
         self.abort_event = threading.Event()
         self.thread: threading.Thread | None = None
@@ -731,6 +737,7 @@ class TestRunner:
         self.raw_seq = 0xA0
         self.t0 = 0.0
         self.known: dict[str, Any] = {}
+        self.last_values: dict[str, Any] = {}  # latest reported/read value per attribute
         self.log_lines: deque[str] = deque(maxlen=200)
         device_center.add_listener(self._on_event)
 
@@ -802,6 +809,7 @@ class TestRunner:
             self.prompt = None
             self.response = None
             self.known = {}
+            self.last_values = {}
             self.log_lines.clear()
             self.t0 = self.clock()
             self.target = {"id": key, "node": int(device["nodeId"], 16), "nodeId": device["nodeId"],
@@ -894,6 +902,13 @@ class TestRunner:
             self.event_seq += 1
             record["n"] = self.event_seq
             self.events.append(record)
+            decoded = record.get("decoded") or {}
+            if decoded.get("kind") in {"report", "read-response"} and record.get("ep") == target["endpoint"]:
+                for item in decoded.get("records", []):
+                    if "value" in item:
+                        name = attribute_name(record["cluster"], item["attribute"])
+                        value = item["value"]
+                        self.last_values[name] = norm_value(name, value) if name in ATTRIBUTES and isinstance(value, int) else value
             self.cond.notify_all()
 
     def _events_after(self, mark: int) -> list[dict[str, Any]]:
@@ -960,10 +975,21 @@ class TestRunner:
             mark = self.event_seq
         started = self.clock()
         commands = lines if zdo else lines + [self._send_line()]
-        try:
-            self.gateway.send_command_sequence(commands, inter_command_delay=self.inter_command_delay)
-        except ValueError as exc:
-            raise StepError(f"CLI 发送失败：{exc}") from exc
+        for attempt in (1, 2):
+            try:
+                self.gateway.send_command_sequence(commands, inter_command_delay=self.inter_command_delay,
+                                                   prompt_timeout=self.prompt_timeout)
+                break
+            except ValueError as exc:
+                # A prompt timeout aborts before the final "send" line, so nothing
+                # went on air and the whole build/send sequence can be repeated once.
+                if attempt == 1 and "prompt timeout" in str(exc):
+                    self._log(f"  CLI 提示符超时，重试一次：{commands[0]}")
+                    self._sleep(0.5)
+                    with self.cond:
+                        mark = self.event_seq
+                    continue
+                raise StepError(f"CLI 发送失败：{exc}") from exc
         returned = self.clock()
 
         def ours(record: dict[str, Any]) -> bool:
@@ -1096,6 +1122,11 @@ class TestRunner:
                                 step["status"] = "aborted" if step["status"] == "running" else "not-run"
                 self.result.update(status=status, message=message,
                                    finished_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+                # Every frame to/from the target as the panel saw it, for comparing
+                # with a sniffer capture when a report seems to be missing.
+                self.result["frames"] = [
+                    {"t_ms": self._ms(e["t"]), "kind": e["kind"], "cluster": e["cluster"], "ep": e["ep"],
+                     "status": e["status"], "data": e["data"]} for e in list(self.events)[-RESULT_FRAME_LIMIT:]]
                 self._update_summary()
                 self.prompt = None
                 self.state.update(active=False, status=status, message=message, current=None)
@@ -1270,6 +1301,7 @@ class TestRunner:
             return self._set_state(step, record)
         if kind == "command":
             lines, cluster, description = build_command(step, self._next_raw_seq)
+            context["before"] = self._snapshot_values()
             info = self._send(lines, cluster, record, description)
             context["anchor"] = context["last_command"] = info
             return "pass", f"已发送 {description}"
@@ -1288,8 +1320,9 @@ class TestRunner:
             with self.cond:
                 mark = self.event_seq
             context["anchor"] = {"_t": shown, "_host_t": None, "_mark": mark, "t_ms": self._ms(shown),
-                                 "description": "操作员动作", "cluster": None}
+                                 "description": "操作员动作", "cluster": None, "operator": True}
             context["last_command"] = None
+            context["before"] = self._snapshot_values()
             response = self._prompt("operator", step["prompt"], record, step.get("timeout_ms"))
             if response["action"] == "skip-case":
                 raise SkipCase()
@@ -1335,6 +1368,10 @@ class TestRunner:
             self._publish_state()
         return response
 
+    def _snapshot_values(self) -> dict[str, Any]:
+        with self.cond:
+            return dict(self.last_values)
+
     def _latest_report_t(self, since_t: float) -> float | None:
         with self.cond:
             latest = None
@@ -1347,26 +1384,34 @@ class TestRunner:
         return latest
 
     def _wait_quiet(self, quiet: float, maximum: float, minimum: float = 0.0) -> int:
+        # Silence only counts after the minimum: a device that reports late (the
+        # RD1 reports OFF ~1.4 s and again ~2.5 s after Off) must not be cut off.
         start = self.clock()
         while True:
             now = self.clock()
-            last = self._latest_report_t(start) or start
-            if now - start >= maximum or (now - last >= quiet and now - start >= minimum):
+            last = max(self._latest_report_t(start) or start, start + minimum)
+            if now - start >= maximum or now - last >= quiet:
                 return int((now - start) * 1000)
             self._sleep(0.05)
 
     def _set_state(self, step: dict[str, Any], record: dict[str, Any]) -> tuple[str, str | None]:
         level = as_int(step["level"])
         on = bool(step["on"])
-        self._send([f"zcl level-control o-mv-to-level {level} 0"], CLUSTER_LEVEL, record, f"设定亮度 {level}（立即开灯）")
-        self._wait_quiet(0.8, 4.0, 0.3)
+        settle_quiet = as_int(step.get("settle_quiet_ms", 2000)) / 1000
+        # Let the previous case (e.g. a knob press still fading) finish first.
+        self._wait_quiet(settle_quiet, 8.0)
+        for attempt in (1, 2):
+            self._send([f"zcl level-control o-mv-to-level {level} 0"], CLUSTER_LEVEL, record, f"设定亮度 {level}（立即开灯）")
+            self._wait_quiet(1.0, 5.0, 0.3)
+            if attempt == 2 or abs(self._read("currentLevel", record)["value"] - level) <= 2:
+                break
+            self._log(f"  亮度未到达 {level}，重发一次")
         if not on:
             self._send(["zcl on-off off"], CLUSTER_ON_OFF, record, "关灯")
             off_tenths = self.known.get("offTransitionTime")
             off_tenths = self.known.get("onOffTransitionTime", 10) if off_tenths in (None, 0xFFFF) else off_tenths
             minimum = (off_tenths or 0) / 10 + 0.5
-            self._wait_quiet(as_int(step.get("settle_quiet_ms", 1200)) / 1000,
-                             max(as_int(step.get("settle_max_ms", 15000)) / 1000, minimum + 1), minimum)
+            self._wait_quiet(settle_quiet, max(as_int(step.get("settle_max_ms", 15000)) / 1000, minimum + 1), minimum)
         actual_on = self._read("onOff", record)["value"]
         actual_level = self._read("currentLevel", record)["value"]
         problems = []
@@ -1389,6 +1434,7 @@ class TestRunner:
         tolerance = as_int(step.get("gap_tolerance_ms", 15))
         infos: list[dict[str, Any]] = []
         overhead = 0.0
+        context["before"] = self._snapshot_values()
         for index, frame in enumerate(step["frames"]):
             if index:
                 delay = infos[-1]["_t"] + gap - overhead - self.clock()
@@ -1427,13 +1473,17 @@ class TestRunner:
         if any(m["kind"] == "no_report" and "within_ms" not in m for m in step["matchers"]):
             quiet = None
         base = max(anchor_t, start)
+        # After an operator prompt the action happens around "继续", which may be
+        # pressed before or after the knob: measure silence and the minimum from
+        # this step's start, so reports that follow "继续" are still collected.
+        reference = base if anchor.get("operator") else anchor_t
         while True:
             now = self.clock()
             if now - base >= window:
                 break
             if quiet is not None:
-                last = self._latest_report_t(anchor_t) or anchor_t
-                if now - last >= as_int(quiet) / 1000 and now - anchor_t >= minimum:
+                last = max(self._latest_report_t(anchor_t) or anchor_t, reference)
+                if now - last >= as_int(quiet) / 1000 and now - reference >= minimum:
                     break
             self._sleep(0.05)
         record["window_ms"] = int((self.clock() - anchor_t) * 1000)
@@ -1464,9 +1514,20 @@ class TestRunner:
         for o in observations:
             rel = (o["_host_t"] - anchor["_host_t"]) if use_host else (o["_t"] - anchor_t) * 1000
             relative.append({"t": int(round(rel)), "attribute": o["attribute"], "value": o["value"], "source": o["source"]})
+        # A report that only repeats the value known before the action (e.g. the
+        # late second OFF report of the previous Off) is stale, not a change.
+        before = context.get("before") or {}
+        changed: set[str] = set()
+        for item in sorted((r for r in relative if r["source"] == "report"), key=lambda r: r["t"]):
+            name = item["attribute"]
+            if name not in changed and name in before and before[name] == item["value"]:
+                item["stale"] = True
+            else:
+                changed.add(name)
         record["time_source"] = "host" if use_host else "panel"
         record["anchor_ms"] = self._ms(anchor_t)
-        record["observations"] = [dict({k: v for k, v in o.items() if not k.startswith("_")}, rel_ms=r["t"])
+        record["observations"] = [dict({k: v for k, v in o.items() if not k.startswith("_")}, rel_ms=r["t"],
+                                       **({"stale": True} if r.get("stale") else {}))
                                   for o, r in zip(observations, relative)][:STEP_OBSERVATION_LIMIT]
         record["default_responses"] = default_responses
         results = [evaluate_matcher(m, relative, {"default_responses": default_responses}) for m in step["matchers"]]
@@ -1591,7 +1652,8 @@ def render_html_report(result: dict[str, Any]) -> str:
             observations = step.get("observations") or []
             if observations:
                 text = " · ".join(f'+{o.get("rel_ms", o.get("t_ms"))}ms {o["attribute"]}={display_value(o["attribute"], o["value"])}'
-                                  f'{"(读)" if o["source"] == "read" else ""}' for o in observations[:80])
+                                  f'{"(读)" if o["source"] == "read" else ""}{"(重复)" if o.get("stale") else ""}'
+                                  for o in observations[:80])
                 extra.append(f'<span class="obs">{esc(text)}</span>')
             operator = step.get("operator")
             if operator:
