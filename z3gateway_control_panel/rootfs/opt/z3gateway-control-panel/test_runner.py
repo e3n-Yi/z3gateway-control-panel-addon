@@ -954,7 +954,7 @@ class TestRunner:
         return self.raw_seq
 
     def _send(self, lines: list[str], cluster: int, step: dict[str, Any], description: str,
-              *, zdo: bool = False) -> dict[str, Any]:
+              *, zdo: bool = False, expect_command: int | None = None) -> dict[str, Any]:
         self._check_target()
         with self.cond:
             mark = self.event_seq
@@ -965,7 +965,19 @@ class TestRunner:
         except ValueError as exc:
             raise StepError(f"CLI 发送失败：{exc}") from exc
         returned = self.clock()
-        tx = self._wait_event(lambda r: r["kind"] == "tx" and r["cluster"] == cluster, mark, self.tx_timeout)
+
+        def ours(record: dict[str, Any]) -> bool:
+            # The host answers device frames with automatic Default Responses on
+            # the same cluster; one can be emitted between the mark and our frame.
+            if record["kind"] != "tx" or record["cluster"] != cluster:
+                return False
+            if zdo or record.get("command_id") is None:
+                return True
+            if not record.get("cluster_specific") and record["command_id"] == 0x0B:
+                return False
+            return expect_command is None or (not record.get("cluster_specific")
+                                              and record["command_id"] == expect_command)
+        tx = self._wait_event(ours, mark, self.tx_timeout)
         info = {"description": description, "commands": commands, "cluster": cluster,
                 "t_send_ms": self._ms(started), "t_returned_ms": self._ms(returned),
                 "t_ms": self._ms(tx["t"]) if tx else self._ms(returned), "tx_seen": tx is not None,
@@ -976,6 +988,11 @@ class TestRunner:
         if tx is None:
             self._log(f"未观察到 {description} 的 @Z3 tx 事件，时间以 CLI 返回为准")
         return info
+
+    def _no_reply_message(self, info: dict[str, Any], action: str, reply: str = "响应") -> str:
+        if not info["tx_seen"]:
+            return f"{action}未发出：网关没有产生对应的 @Z3 tx 事件，请查看高级控制台日志中的 CLI 输出"
+        return f"{action}已发出（ZCL Seq {info.get('zcl_seq')}），{self.response_timeout:g} 秒内未收到 {reply}"
 
     def _response(self, info: dict[str, Any], command_id: int, timeout: float | None = None) -> dict[str, Any] | None:
         cluster = info["cluster"]
@@ -994,7 +1011,8 @@ class TestRunner:
                     continue
                 for record in self._events_after(info["_mark"]):
                     if record["kind"] == "sent" and record["cluster"] == info["cluster"] and (
-                            info.get("zcl_seq") is None or record.get("zcl_seq") == info.get("zcl_seq")):
+                            info.get("zcl_seq") is None or record.get("zcl_seq") == info.get("zcl_seq")) and (
+                            info.get("command_id") is None or record.get("command_id") == info.get("command_id")):
                         info["aps_status"] = record["status"]
                         break
 
@@ -1010,10 +1028,11 @@ class TestRunner:
 
     def _read(self, name: str, step: dict[str, Any]) -> dict[str, Any]:
         cluster, attribute, _ = ATTRIBUTES[name]
-        info = self._send([f"zcl global read 0x{cluster:04X} 0x{attribute:04X}"], cluster, step, f"读取 {name}")
+        info = self._send([f"zcl global read 0x{cluster:04X} 0x{attribute:04X}"], cluster, step, f"读取 {name}",
+                          expect_command=0x00)
         record = self._response(info, 0x01)
         if record is None:
-            raise StepError(f"读取 {name} 超时")
+            raise StepError(self._no_reply_message(info, f"读取 {name}"))
         for item in (record.get("decoded") or {}).get("records", []):
             if item.get("attribute") == attribute:
                 if item.get("status", 0) != 0:
@@ -1029,12 +1048,13 @@ class TestRunner:
     def _write(self, cluster: int, attribute: int, data_type: int, value: int, label: str,
                step: dict[str, Any], verify: bool) -> None:
         info = self._send([f"zcl global write 0x{cluster:04X} 0x{attribute:04X} 0x{data_type:02X} "
-                           f"{hex_value(data_type, value)}"], cluster, step, f"写入 {label}={value}")
+                           f"{hex_value(data_type, value)}"], cluster, step, f"写入 {label}={value}",
+                          expect_command=0x02)
         if not verify:
             return
         record = self._response(info, 0x04)
         if record is None:
-            raise StepError(f"写入 {label} 未收到 Write Attributes Response")
+            raise StepError(self._no_reply_message(info, f"写入 {label}", "Write Attributes Response"))
         statuses = [item.get("status") for item in (record.get("decoded") or {}).get("records", [])]
         if any(status != 0 for status in statuses):
             raise StepError(f"写入 {label} 被拒绝，状态 {', '.join('0x%02X' % s for s in statuses)}")
@@ -1121,10 +1141,11 @@ class TestRunner:
                 container["steps"].append(step)
                 self._begin_step(step, None)
                 info = self._send([f"zcl global send-me-a-report 0x{cluster:04X} 0x{attribute:04X} 0x{data_type:02X} "
-                                   f"{low} {high} {change}"], cluster, step, f"Configure Reporting {name}")
+                                   f"{low} {high} {change}"], cluster, step, f"Configure Reporting {name}",
+                                  expect_command=0x06)
                 record = self._response(info, 0x07)
                 if record is None:
-                    raise StepError(f"配置 {name} 上报未收到响应")
+                    raise StepError(self._no_reply_message(info, f"配置 {name} 上报", "Configure Reporting Response"))
                 statuses = [r.get("status") for r in (record.get("decoded") or {}).get("records", [])]
                 if any(s != 0 for s in statuses):
                     raise StepError(f"配置 {name} 上报被拒绝，状态 {', '.join('0x%02X' % s for s in statuses)}")
