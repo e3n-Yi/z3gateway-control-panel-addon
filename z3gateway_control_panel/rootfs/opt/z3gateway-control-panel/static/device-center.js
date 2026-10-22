@@ -44,7 +44,8 @@
     $d('dc-refresh-info').onclick=async()=>{try{await request('refresh');toast('资料读取已排队');}catch(e){toast(e.message);}};
   }
   function drawDetail(){
-    if(!selected||!current){$d('dc-identity').textContent='选择设备，查看资料并执行操作';$d('dc-tabs').innerHTML='';$d('dc-content').innerHTML='';$d('dc-log').textContent='';return;}
+    // Without a selected device, keep showing the gateway log instead of clearing it on every 2 s refresh.
+    if(!selected||!current){$d('dc-identity').textContent='选择设备，查看资料并执行操作';$d('dc-tabs').innerHTML='';$d('dc-content').innerHTML='';drawLog();return;}
     drawIdentity();
     $d('dc-tabs').innerHTML=['概览','控制','属性','OTA','更多操作'].map(t=>`<button class="tab ${t===tab?'active':''}" data-section="${t}">${t}</button>`).join('');
     drawBody();drawLog();
@@ -92,7 +93,7 @@
     for (const e of [...(current?.events||[]), ...deviceLogEvents]) {
       if (e.device===selected && e.generation===current?.device.generation) events.set(e.eventId,e);
     }
-    const text=allLogs?state.logText:[...events.values()].sort((a,b)=>a.eventId-b.eventId).slice(-400).map(e=>`${e.at} ${e.event} ep:${e.ep} cluster:0x${e.cluster.toString(16)} ${e.data}`).join('\n')+'\n'+(current?.operations||[]).filter(j=>!j.auto).map(j=>`${j.created} ${j.action}: ${j.state} ${(j.commands||[]).join(' / ')} ${j.error||''}`).join('\n');
+    const text=allLogs||!selected?state.logText:[...events.values()].sort((a,b)=>a.eventId-b.eventId).slice(-400).map(e=>`${e.at} ${e.event} ep:${e.ep} cluster:0x${e.cluster.toString(16)} ${e.data}`).join('\n')+'\n'+(current?.operations||[]).filter(j=>!j.auto).map(j=>`${j.created} ${j.action}: ${j.state} ${(j.commands||[]).join(' / ')} ${j.error||''}`).join('\n');
     if(el.textContent!==text){el.textContent=text;if(bottom)el.scrollTop=el.scrollHeight;}
   }
   document.addEventListener('z3-log-flush', drawLog);

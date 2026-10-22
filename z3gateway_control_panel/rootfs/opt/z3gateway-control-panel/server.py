@@ -1904,7 +1904,15 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def request_shutdown(signum: int, frame: Any) -> None:
+    # Docker stops the add-on with SIGTERM. As PID 1 (run.sh execs python3)
+    # the default action is ignored, so the container was killed after the
+    # stop timeout (exit 137) without stopping the gateway cleanly.
+    raise KeyboardInterrupt
+
+
 def main() -> None:
+    signal.signal(signal.SIGTERM, request_shutdown)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), RequestHandler)
     print(f"Z3Gateway control panel: http://{DEFAULT_HOST}:{DEFAULT_PORT}")
@@ -1920,6 +1928,8 @@ def main() -> None:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nStopping server...")
+        test_runner.abort("server-stop")
+        device_center.stop()
         zero_cross_calibrator.stop("server-stop")
         manager.stop()
         server.server_close()

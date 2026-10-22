@@ -836,7 +836,8 @@ class TestRunner:
         with self.cond:
             if not self.active:
                 return self.status()
-            self.state["message"] = {"user": "已请求中止", "gateway-stop": "网关停止，测试中止"}.get(reason, reason)
+            self.state["message"] = {"user": "已请求中止", "gateway-stop": "网关停止，测试中止",
+                                     "server-stop": "面板服务停止，测试中止"}.get(reason, reason)
             self.abort_event.set()
             self.cond.notify_all()
         self._log(f"中止请求：{reason}")
