@@ -1,0 +1,2471 @@
+{
+ "format": "z3-test-script/1",
+ "id": "rd1-onoff",
+ "title": "C-ZB-RD1 OnOff Tests",
+ "source": "C-ZB-RD1 Functional Testing - Firmware Update 200726.xlsx / C-ZB-RD1 - OnOff Tests",
+ "description": "由 build_rd1_scripts.py 从客户测试表格自动生成；旋钮动作与灯光观察为人工步骤。",
+ "endpoint": 1,
+ "setup": {
+  "bind": true,
+  "reporting": [
+   {
+    "attribute": "onOff",
+    "min": 0,
+    "max": 3600
+   },
+   {
+    "attribute": "currentLevel",
+    "min": 1,
+    "max": 3600,
+    "change": 1
+   }
+  ],
+  "note": "假定与 Hubitat 通用 Zigbee 调光驱动一致（level min 1s / max 3600s / change 1）；如与客户 Hubitat 实际配置不同请修改。"
+ },
+ "cases": [
+  {
+   "id": "onoff-01",
+   "number": "OnOff 1",
+   "sheet": "OnOff Tests",
+   "order": 1001,
+   "title": "发送 ON → 发送 OFF",
+   "notes": "Tests 1 - 4 test basic on / off between Zigbee and rotary knob interaction；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-02",
+   "number": "OnOff 2",
+   "sheet": "OnOff Tests",
+   "order": 1002,
+   "title": "按旋钮 → 发送 OFF",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 110,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-03",
+   "number": "OnOff 3",
+   "sheet": "OnOff Tests",
+   "order": 1003,
+   "title": "发送 ON → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-04",
+   "number": "OnOff 4",
+   "sheet": "OnOff Tests",
+   "order": 1004,
+   "title": "按旋钮 → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-05",
+   "number": "OnOff 5",
+   "sheet": "OnOff Tests",
+   "order": 1005,
+   "title": "发送 ON → 发送 OFF",
+   "notes": "Tests 5 - 8 repeat tests 1 - 4 but with different status at start；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-06",
+   "number": "OnOff 6",
+   "sheet": "OnOff Tests",
+   "order": 1006,
+   "title": "按旋钮 → 发送 OFF",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-07",
+   "number": "OnOff 7",
+   "sheet": "OnOff Tests",
+   "order": 1007,
+   "title": "发送 ON → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-08",
+   "number": "OnOff 8",
+   "sheet": "OnOff Tests",
+   "order": 1008,
+   "title": "按旋钮 → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-09",
+   "number": "OnOff 9",
+   "sheet": "OnOff Tests",
+   "order": 1009,
+   "title": "发送 ON → 发送 OFF",
+   "notes": "Tests 9 - 12 repeat tests 1 - 4 with onLevel set to 50% (0x127)；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-10",
+   "number": "OnOff 10",
+   "sheet": "OnOff Tests",
+   "order": 1010,
+   "title": "按旋钮 → 发送 OFF",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-11",
+   "number": "OnOff 11",
+   "sheet": "OnOff Tests",
+   "order": 1011,
+   "title": "发送 ON → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-12",
+   "number": "OnOff 12",
+   "sheet": "OnOff Tests",
+   "order": 1012,
+   "title": "按旋钮 → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-13",
+   "number": "OnOff 13",
+   "sheet": "OnOff Tests",
+   "order": 1013,
+   "title": "发送 ON → 发送 OFF",
+   "notes": "Tests 13 - 16 repeat tests 9 - 12 with different status at start；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 190,
+     "label": "前置状态：关，亮度 75%（level 190）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-14",
+   "number": "OnOff 14",
+   "sheet": "OnOff Tests",
+   "order": 1014,
+   "title": "按旋钮 → 发送 OFF",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 190,
+     "label": "前置状态：关，亮度 75%（level 190）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-15",
+   "number": "OnOff 15",
+   "sheet": "OnOff Tests",
+   "order": 1015,
+   "title": "发送 ON → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 190,
+     "label": "前置状态：关，亮度 75%（level 190）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4500,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-16",
+   "number": "OnOff 16",
+   "sheet": "OnOff Tests",
+   "order": 1016,
+   "title": "按旋钮 → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=10, offTransitionTime=10"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 190,
+     "label": "前置状态：关，亮度 75%（level 190）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 100,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 0.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "min_ms": 500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 0.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-17",
+   "number": "OnOff 17",
+   "sheet": "OnOff Tests",
+   "order": 1017,
+   "title": "发送 ON → 发送 OFF",
+   "notes": "Tests 17 - 20 repeat tests 1 - 4 but with onTransitionTime and offTransitionTime set to 5s (0x32)；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 9000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 20,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 71,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 122,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 173,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 224,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 5000,
+       "tolerance_ms": 1750
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 9000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-18",
+   "number": "OnOff 18",
+   "sheet": "OnOff Tests",
+   "order": 1018,
+   "title": "按旋钮 → 发送 OFF",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 11000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 20,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 71,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 122,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 173,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 224,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 5000,
+       "tolerance_ms": 1750,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 9000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-19",
+   "number": "OnOff 19",
+   "sheet": "OnOff Tests",
+   "order": 1019,
+   "title": "发送 ON → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 9000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 20,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 71,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 122,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 173,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 224,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 5000,
+       "tolerance_ms": 1750
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 11000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-20",
+   "number": "OnOff 20",
+   "sheet": "OnOff Tests",
+   "order": 1020,
+   "title": "按旋钮 → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 11000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 20,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 71,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 122,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 173,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 224,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 5000,
+       "tolerance_ms": 1750,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 11000,
+     "quiet_ms": 2500,
+     "min_ms": 5000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-21",
+   "number": "OnOff 21",
+   "sheet": "OnOff Tests",
+   "order": 1021,
+   "title": "发送 ON → 发送 OFF",
+   "notes": "Tests 21 - 24 repeat tests 17 - 20 but with onLevel set to 50% (0x127)；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 23,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 76,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 125,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 2500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-22",
+   "number": "OnOff 22",
+   "sheet": "OnOff Tests",
+   "order": 1022,
+   "title": "按旋钮 → 发送 OFF",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 23,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 76,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 125,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 2500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "command",
+     "command": "off",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-23",
+   "number": "OnOff 23",
+   "sheet": "OnOff Tests",
+   "order": 1023,
+   "title": "发送 ON → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "command",
+     "command": "on",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 23,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 76,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 125,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 2500,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    }
+   ]
+  },
+  {
+   "id": "onoff-24",
+   "number": "OnOff 24",
+   "sheet": "OnOff Tests",
+   "order": 1024,
+   "title": "按旋钮 → 按旋钮",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 127,
+      "onTransitionTime": 50,
+      "offTransitionTime": 50
+     },
+     "label": "设置属性 onLevel=127, onTransitionTime=50, offTransitionTime=50"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 127,
+     "label": "前置状态：关，亮度 50%（level 127）"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 23,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 76,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 125,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 127,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 2500,
+       "tolerance_ms": 1200,
+       "from": "first_report"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 50%，约 2.5 秒"
+    },
+    {
+     "type": "operator",
+     "prompt": "请短按一次旋钮，然后点击“继续”",
+     "observe": "观察：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8500,
+     "quiet_ms": 2500,
+     "min_ms": 2500,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 50% 渐暗至熄灭，约 2.5 秒"
+    }
+   ]
+  }
+ ]
+}

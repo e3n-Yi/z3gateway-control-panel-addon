@@ -28,6 +28,24 @@ Open **OTA 文件** in the Z3Gateway panel, then drag files into the upload area
 Files are persisted under `/data/ota-files`, survive add-on restarts and upgrades, and can be downloaded or deleted from the same panel. The maximum size of one file is 512 MB. Uploading the same filename asks before replacing it.
 
 
+## Automated tests (0.3.0)
+
+Open **自动测试**, choose a script, select cases, pick the target device and
+endpoint, then click **开始测试**. Before the first case the add-on binds On/Off
+and Level Control to the gateway and configures reporting (On/Off 0–3600 s,
+CurrentLevel 1–3600 s, change 1); clear the option if the device is already
+configured. While a run is active the target device is owned by the test:
+manual device operations are refused and automatic discovery waits. Answer
+knob prompts with **继续** and visual checks with **通过 / 不通过**, or turn off
+manual confirmation to check reports only.
+
+Built-in scripts cover the C-ZB-RD1 OnOff, Move To Level and Move sheets and
+the 2026 regression cases. Uploaded scripts are stored in `/data/test-scripts`,
+results in `/data/test-results`; each result can be opened or downloaded as an
+HTML report. Frame gaps below about 50 ms cannot be produced through the CLI,
+so those cases report "无法判定". Results depend on the reporting configuration
+and do not prove interoperability with other controllers.
+
 ## Device center (0.2.0)
 
 The default Devices page owns persistent IEEE-based device records. Existing

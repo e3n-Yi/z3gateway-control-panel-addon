@@ -6,12 +6,16 @@
   const hidden = new Set(['nodeId','targetNode','srcEui','srcEp','dstEp','otaEndpoint','otaManufacturerId','otaImageTypeId','otaFirmwareVersion','otaPayloadType']);
   let devices=[],commands=[],defaults={},selected=null,tab='概览',current=null,files=[],busy=false,allLogs=false,activeAction=null;
   const drafts = new Map();
-  root.innerHTML = `<div class="dc-list panel"><div class="panel-title"><h2>设备</h2><button id="dc-reload">刷新</button></div><input id="dc-search" placeholder="搜索名称、型号、地址" aria-label="搜索设备"><div id="dc-cards"></div></div><div class="dc-main"><section class="panel dc-detail"><div id="dc-identity"></div><div id="dc-tabs" class="tabs"></div><div id="dc-content"></div></section><section class="panel dc-log-panel"><div class="panel-title"><h2>通信与操作日志</h2><div class="toolbar"><button id="dc-log-scope">显示全部日志</button><button id="dc-log-focus">专注日志</button></div></div><pre id="dc-log"></pre></section></div>`;
+  root.innerHTML = `<div class="dc-list panel"><div class="panel-title"><h2>设备</h2><button id="dc-reload" class="ghost">刷新</button></div><input id="dc-search" placeholder="搜索名称、型号、地址" aria-label="搜索设备"><div id="dc-cards"></div></div><div class="dc-main"><section class="panel dc-detail"><div id="dc-identity"></div><div id="dc-tabs" class="tabs"></div><div id="dc-content"></div></section><section class="panel dc-log-panel"><div class="panel-title"><h2>通信与操作日志</h2><div class="toolbar"><button id="dc-log-scope" class="ghost">显示全部日志</button><button id="dc-log-focus" class="ghost">专注日志</button></div></div><pre id="dc-log"></pre></section></div>`;
   const $d = id => document.getElementById(id);
   const request = (suffix, payload) => api('/api/device-center/'+encodeURIComponent(selected)+'/'+suffix,{method:'POST',body:JSON.stringify(payload||{})});
+  function stateChip(d){
+    const [label,tone]=d.joined===false?['已离网','bad']:d.role==='gateway'?['网关','info']:({complete:['就绪','ok'],reading:['读取中','info'],partial:['资料不全','warn'],'address-changed':['地址变化','warn']})[d.discovery]||['待发现',''];
+    return `<span class="chip ${tone}">${label}</span>`;
+  }
   function drawCards(){
     const term=$d('dc-search').value.toLowerCase();
-    $d('dc-cards').innerHTML=devices.filter(d=>JSON.stringify(d).toLowerCase().includes(term)).map(d=>`<button class="dc-card ${d.id===selected?'active':''}" data-device="${escape(d.id)}"><strong>${escape(d.name||d.model||d.nodeId||'待确认设备')}</strong><span>${escape([d.manufacturer,d.model].filter(Boolean).join(' · ')||'资料待读取')}</span><span>${escape(d.deviceType||'类型未知')} · ${escape(d.networkRole||'角色未知')}</span><code>${escape(d.eui64||'IEEE 待确认')}</code><small>${escape(d.joined===false?'已离网':d.discovery||'pending')} · ${escape(d.lastSeen||'尚无通信')}</small></button>`).join('')||'<p class="muted">暂无设备，请在网关设置中启动网关并开放入网。</p>';
+    $d('dc-cards').innerHTML=devices.filter(d=>JSON.stringify(d).toLowerCase().includes(term)).map(d=>`<button class="dc-card ${d.id===selected?'active':''}" data-device="${escape(d.id)}"><span class="dc-card-head"><strong>${escape(d.name||d.model||d.nodeId||'待确认设备')}</strong>${stateChip(d)}</span><span>${escape([d.manufacturer,d.model].filter(Boolean).join(' · ')||'资料待读取')}</span><span>${escape(d.deviceType||'类型未知')} · ${escape(d.networkRole||'角色未知')}</span><code>${escape(d.eui64||'IEEE 待确认')}</code><small>${escape(d.joined===false?'已离网':d.discovery||'pending')} · ${escape(d.lastSeen||'尚无通信')}</small></button>`).join('')||'<p class="muted">暂无设备，请在网关设置中启动网关并开放入网。</p>';
   }
   async function refresh(){
     if(busy||!panelIsVisible()||document.getElementById('view-devices').hidden) return;
@@ -36,7 +40,7 @@
   function drawIdentity(){
     if(!current)return;
     const d=current.device;
-    $d('dc-identity').innerHTML=`<div class="panel-title"><div><h2>${escape(d.name||d.model||'设备详情')}</h2><p>${escape(d.eui64||'身份待确认')} · ${escape(d.nodeId||'地址待确认')} · ${escape(d.discovery||'pending')}</p></div><button id="dc-refresh-info">重新读取资料</button></div>`;
+    $d('dc-identity').innerHTML=`<div class="panel-title"><div><h2>${escape(d.name||d.model||'设备详情')}</h2><p>${escape(d.eui64||'身份待确认')} · ${escape(d.nodeId||'地址待确认')} · ${escape(d.discovery||'pending')}</p></div><button id="dc-refresh-info" class="ghost">重新读取资料</button></div>`;
     $d('dc-refresh-info').onclick=async()=>{try{await request('refresh');toast('资料读取已排队');}catch(e){toast(e.message);}};
   }
   function drawDetail(){

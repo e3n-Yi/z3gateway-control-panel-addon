@@ -8,6 +8,7 @@ import shutil
 import struct
 import threading
 import time
+import traceback
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -63,6 +64,11 @@ class DeviceCenter:
         self.event_sequence = 0
         self.early = deque(maxlen=40)
         self.last_probe = {}
+        # Automated tests: decoded @Z3 event listeners, the device a test run
+        # owns, and devices whose automatic discovery waits for the run to end.
+        self.listeners = []
+        self.test_owner = None
+        self.deferred = set()
         self.commands = {}
         for group in catalog['groups']:
             for command in group['commands']:
@@ -189,6 +195,12 @@ class DeviceCenter:
             d = self.get(key)
             if not self.manager.running():
                 raise ValueError('请先启动网关')
+            if self.test_owner is not None:
+                if auto:
+                    self.deferred.add(key)
+                    return {'device': key, 'action': action, 'state': 'deferred'}
+                if key == self.test_owner:
+                    raise ValueError('设备正在自动测试中，请先中止测试')
             if action != '_ieee' and (d.get('identity') != 'known' or not d.get('nodeId') or not d.get('addressVerified')):
                 raise ValueError('设备身份或当前地址待确认，请先刷新资料')
             if auto:
@@ -225,6 +237,9 @@ class DeviceCenter:
                 return {'state': 'gateway'}
             if not d.get('nodeId'):
                 return {'state': 'address-changed'}
+            if self.test_owner is not None:
+                self.deferred.add(key)
+                return {'state': 'deferred'}
             self.db['devices'][key]['discovery'] = 'reading'
             self.save()
         if d['identity'] == 'pending' or not d.get('addressVerified'):
@@ -357,6 +372,34 @@ class DeviceCenter:
                         pass
                 self.pending.task_done()
 
+    def add_listener(self, listener):
+        """Call listener(event, received_monotonic) for every decoded @Z3 event."""
+        self.listeners.append(listener)
+
+    def lock_for_test(self, key):
+        # A test run owns one device; all automatic discovery waits for it.
+        with self.lock:
+            self.get(key)
+            if self.test_owner is not None:
+                raise ValueError('已有自动测试在运行')
+            self.test_owner = key
+            for job in self.jobs.values():
+                if job['auto'] and job['state'] == 'queued':
+                    job['state'] = 'cancelled'
+                    job['_wake'].set()
+                    self.deferred.add(job['device'])
+
+    def unlock_test(self):
+        with self.lock:
+            self.test_owner = None
+            deferred = sorted(self.deferred)
+            self.deferred.clear()
+        for key in deferred:
+            try:
+                self.discover(key)
+            except ValueError:
+                continue
+
     def stop(self):
         with self.lock:
             for job in self.jobs.values():
@@ -369,6 +412,7 @@ class DeviceCenter:
             return {'device': self.get(key), 'operations': self.operations(key), 'events': copy.deepcopy([e for e in self.events if e.get('device') == key])}
 
     def feed(self, text, session):
+        received = time.monotonic()
         with self.lock:
             before = self.event_sequence
             if session != self.session:
@@ -385,9 +429,15 @@ class DeviceCenter:
             marker = line.find('@Z3 ')
             if marker >= 0:
                 try:
-                    self.event(json.loads(line[marker+4:]))
+                    parsed = json.loads(line[marker+4:])
+                    self.event(parsed)
                 except (ValueError, KeyError, IndexError, struct.error):
                     continue
+                for listener in list(self.listeners):
+                    try:
+                        listener(parsed, received)
+                    except Exception:
+                        traceback.print_exc()
 
         with self.lock:
             return [dict(e) for e in self.events if e["eventId"] > before]

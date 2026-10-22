@@ -1,0 +1,908 @@
+{
+ "format": "z3-test-script/1",
+ "id": "rd1-regression-2026",
+ "title": "RD1 2026 回归用例",
+ "source": "Hue 互通问题与 Options/ExecuteIfOff 修复（2026）",
+ "description": "Hue 命令序列、Level Control Options、关灯后立即调光与渐变中操作旋钮。20/40 ms 间隔需要第二阶段精确时序。",
+ "endpoint": 1,
+ "setup": {
+  "bind": true,
+  "reporting": [
+   {
+    "attribute": "onOff",
+    "min": 0,
+    "max": 3600
+   },
+   {
+    "attribute": "currentLevel",
+    "min": 1,
+    "max": 3600,
+    "change": 1
+   }
+  ],
+  "note": "假定与 Hubitat 通用 Zigbee 调光驱动一致（level min 1s / max 3600s / change 1）；如与客户 Hubitat 实际配置不同请修改。"
+ },
+ "cases": [
+  {
+   "id": "cli-gap-baseline",
+   "number": "REG 0",
+   "order": 9000,
+   "title": "CLI 通道最小帧间隔基准",
+   "notes": "记录本主机 CLI/PTY 通道能达到的最小帧间隔，用于判断其他时序用例是否可信。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 128
+    },
+    {
+     "type": "burst",
+     "gap_ms": 0,
+     "gap_tolerance_ms": 1000,
+     "frames": [
+      {
+       "command": "move_to_level",
+       "level": 120,
+       "transition": 0
+      },
+      {
+       "command": "move_to_level",
+       "level": 128,
+       "transition": 0
+      }
+     ]
+    },
+    {
+     "type": "expect",
+     "window_ms": 4000,
+     "quiet_ms": 1500,
+     "read_back": [
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "read_value",
+       "value": 128,
+       "tolerance": 1
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "hue-seq-20",
+   "number": "REG 1.1",
+   "order": 9101,
+   "title": "Hue 序列：关灯时 MTL(开关) L2 → 20 ms → MTL L128 T0.4s",
+   "notes": "复现 Hue 场景：第二条命令在 OnOff 属性更新前到达。20/40 ms 需要第二阶段精确时序，CLI 通道下预计为“无法判定”。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254
+    },
+    {
+     "type": "burst",
+     "gap_ms": 20,
+     "gap_tolerance_ms": 15,
+     "frames": [
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 4,
+       "payload": "02 00 00",
+       "label": "Move To Level With On/Off L=2 T=0"
+      },
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 0,
+       "payload": "80 04 00",
+       "disable_default_response": true,
+       "label": "Move To Level L=128 T=4（无 options 字段，DDR）"
+      }
+     ],
+     "observe": "观察：灯应亮起并在约 0.4 秒内到达 50%"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6000,
+     "quiet_ms": 2500,
+     "min_ms": 1500,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": true
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
+    }
+   ]
+  },
+  {
+   "id": "hue-seq-40",
+   "number": "REG 1.2",
+   "order": 9102,
+   "title": "Hue 序列：关灯时 MTL(开关) L2 → 40 ms → MTL L128 T0.4s",
+   "notes": "复现 Hue 场景：第二条命令在 OnOff 属性更新前到达。20/40 ms 需要第二阶段精确时序，CLI 通道下预计为“无法判定”。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254
+    },
+    {
+     "type": "burst",
+     "gap_ms": 40,
+     "gap_tolerance_ms": 15,
+     "frames": [
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 4,
+       "payload": "02 00 00",
+       "label": "Move To Level With On/Off L=2 T=0"
+      },
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 0,
+       "payload": "80 04 00",
+       "disable_default_response": true,
+       "label": "Move To Level L=128 T=4（无 options 字段，DDR）"
+      }
+     ],
+     "observe": "观察：灯应亮起并在约 0.4 秒内到达 50%"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6000,
+     "quiet_ms": 2500,
+     "min_ms": 1500,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": true
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
+    }
+   ]
+  },
+  {
+   "id": "hue-seq-100",
+   "number": "REG 1.3",
+   "order": 9103,
+   "title": "Hue 序列：关灯时 MTL(开关) L2 → 100 ms → MTL L128 T0.4s",
+   "notes": "复现 Hue 场景：第二条命令在 OnOff 属性更新前到达。20/40 ms 需要第二阶段精确时序，CLI 通道下预计为“无法判定”。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254
+    },
+    {
+     "type": "burst",
+     "gap_ms": 100,
+     "gap_tolerance_ms": 40,
+     "frames": [
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 4,
+       "payload": "02 00 00",
+       "label": "Move To Level With On/Off L=2 T=0"
+      },
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 0,
+       "payload": "80 04 00",
+       "disable_default_response": true,
+       "label": "Move To Level L=128 T=4（无 options 字段，DDR）"
+      }
+     ],
+     "observe": "观察：灯应亮起并在约 0.4 秒内到达 50%"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6000,
+     "quiet_ms": 2500,
+     "min_ms": 1500,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": true
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
+    }
+   ]
+  },
+  {
+   "id": "hue-seq-300",
+   "number": "REG 1.4",
+   "order": 9104,
+   "title": "Hue 序列：关灯时 MTL(开关) L2 → 300 ms → MTL L128 T0.4s",
+   "notes": "复现 Hue 场景：第二条命令在 OnOff 属性更新前到达。20/40 ms 需要第二阶段精确时序，CLI 通道下预计为“无法判定”。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254
+    },
+    {
+     "type": "burst",
+     "gap_ms": 300,
+     "gap_tolerance_ms": 40,
+     "frames": [
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 4,
+       "payload": "02 00 00",
+       "label": "Move To Level With On/Off L=2 T=0"
+      },
+      {
+       "command": "raw",
+       "cluster": 8,
+       "command_id": 0,
+       "payload": "80 04 00",
+       "disable_default_response": true,
+       "label": "Move To Level L=128 T=4（无 options 字段，DDR）"
+      }
+     ],
+     "observe": "观察：灯应亮起并在约 0.4 秒内到达 50%"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6000,
+     "quiet_ms": 2500,
+     "min_ms": 1500,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 2
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": true
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
+    }
+   ]
+  },
+  {
+   "id": "options-execute-if-off",
+   "number": "REG 2.1",
+   "order": 9201,
+   "title": "Options=ExecuteIfOff：关灯时 Move To Level(mask/override 0)",
+   "notes": "ZCL Level Control Options 位 0（ExecuteIfOff）与命令中的 mask/override。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 1
+     }
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254
+    },
+    {
+     "type": "command",
+     "command": "move_to_level",
+     "level": 128,
+     "transition": 0,
+     "options_mask": 0,
+     "options_override": 0,
+     "observe": "观察：灯应保持熄灭"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 1
+      },
+      {
+       "kind": "no_report",
+       "attribute": "onOff"
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 1
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯始终保持熄灭"
+    },
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "options": 0
+     },
+     "label": "恢复 Options=0"
+    }
+   ]
+  },
+  {
+   "id": "options-ignored-when-off",
+   "number": "REG 2.2",
+   "order": 9202,
+   "title": "Options=0：关灯时 Move To Level(mask/override 0) 应被忽略",
+   "notes": "ZCL Level Control Options 位 0（ExecuteIfOff）与命令中的 mask/override。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254
+    },
+    {
+     "type": "command",
+     "command": "move_to_level",
+     "level": 128,
+     "transition": 0,
+     "options_mask": 0,
+     "options_override": 0,
+     "observe": "观察：灯应保持熄灭"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "onOff"
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 1
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯始终保持熄灭"
+    },
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "options": 0
+     },
+     "label": "恢复 Options=0"
+    }
+   ]
+  },
+  {
+   "id": "options-override-when-off",
+   "number": "REG 2.3",
+   "order": 9203,
+   "title": "Options=0，mask/override=1/1：关灯时应执行",
+   "notes": "ZCL Level Control Options 位 0（ExecuteIfOff）与命令中的 mask/override。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254
+    },
+    {
+     "type": "command",
+     "command": "move_to_level",
+     "level": 128,
+     "transition": 0,
+     "options_mask": 1,
+     "options_override": 1,
+     "observe": "观察：灯应保持熄灭"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 1
+      },
+      {
+       "kind": "no_report",
+       "attribute": "onOff"
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 128,
+       "tolerance": 1
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯始终保持熄灭"
+    },
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "options": 0
+     },
+     "label": "恢复 Options=0"
+    }
+   ]
+  },
+  {
+   "id": "off-then-level-300",
+   "number": "REG 3.1",
+   "order": 9301,
+   "title": "OFF 后 300 ms 内 Move To Level(mask/override 0) 应被忽略",
+   "notes": "关灯渐暗过程中 OnOff 属性尚未变为 OFF；命令应按已下发的关灯状态处理。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 254
+    },
+    {
+     "type": "burst",
+     "gap_ms": 300,
+     "gap_tolerance_ms": 80,
+     "frames": [
+      {
+       "command": "off"
+      },
+      {
+       "command": "move_to_level",
+       "level": 128,
+       "transition": 0
+      }
+     ],
+     "observe": "观察：灯应在约 1 秒内渐暗并熄灭"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6000,
+     "quiet_ms": 2500,
+     "min_ms": 1500,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯最终熄灭，没有重新亮起"
+    }
+   ]
+  },
+  {
+   "id": "off-then-level-800",
+   "number": "REG 3.2",
+   "order": 9302,
+   "title": "OFF 后 800 ms 内 Move To Level(mask/override 0) 应被忽略",
+   "notes": "关灯渐暗过程中 OnOff 属性尚未变为 OFF；命令应按已下发的关灯状态处理。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 254
+    },
+    {
+     "type": "burst",
+     "gap_ms": 800,
+     "gap_tolerance_ms": 80,
+     "frames": [
+      {
+       "command": "off"
+      },
+      {
+       "command": "move_to_level",
+       "level": 128,
+       "transition": 0
+      }
+     ],
+     "observe": "观察：灯应在约 1 秒内渐暗并熄灭"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6000,
+     "quiet_ms": 2500,
+     "min_ms": 1500,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯最终熄灭，没有重新亮起"
+    }
+   ]
+  },
+  {
+   "id": "knob-during-transition",
+   "number": "REG 4.1",
+   "order": 9401,
+   "title": "Zigbee 10 秒渐亮过程中按旋钮",
+   "notes": "属性必须与实际输出一致。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 25
+    },
+    {
+     "type": "command",
+     "command": "move_to_level_on_off",
+     "level": 254,
+     "transition": 100,
+     "observe": "观察：灯开始在 10 秒内渐亮"
+    },
+    {
+     "type": "wait",
+     "ms": 3000
+    },
+    {
+     "type": "operator",
+     "prompt": "渐亮进行中：现在请短按一次旋钮，然后点击“继续”"
+    },
+    {
+     "type": "expect",
+     "window_ms": 8000,
+     "quiet_ms": 2500,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "read_value",
+       "attribute": "onOff",
+       "value": false
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：按下旋钮后灯熄灭，且页面读回的 onOff / currentLevel 与实际一致"
+    }
+   ]
+  },
+  {
+   "id": "knob-rotate-during-transition",
+   "number": "REG 4.2",
+   "order": 9402,
+   "title": "Zigbee 10 秒渐亮过程中旋转旋钮",
+   "notes": "旋钮调光后 CurrentLevel 必须反映实际亮度。",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "options": 0
+     }
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 25
+    },
+    {
+     "type": "command",
+     "command": "move_to_level_on_off",
+     "level": 254,
+     "transition": 100,
+     "observe": "观察：灯开始在 10 秒内渐亮"
+    },
+    {
+     "type": "wait",
+     "ms": 3000
+    },
+    {
+     "type": "operator",
+     "prompt": "渐亮进行中：请逆时针旋转旋钮约半圈，然后点击“继续”"
+    },
+    {
+     "type": "expect",
+     "window_ms": 12000,
+     "quiet_ms": 3000,
+     "read_back": [
+      "onOff",
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "in_range",
+       "attribute": "currentLevel",
+       "min": 1,
+       "max": 253,
+       "scope": "final"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯停在旋钮设定的亮度，没有继续渐亮到 100%，且读回的 currentLevel 与实际亮度相符"
+    }
+   ]
+  }
+ ]
+}

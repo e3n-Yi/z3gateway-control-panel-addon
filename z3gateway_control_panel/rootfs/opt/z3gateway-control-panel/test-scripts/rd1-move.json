@@ -1,0 +1,1915 @@
+{
+ "format": "z3-test-script/1",
+ "id": "rd1-move",
+ "title": "C-ZB-RD1 Move Tests",
+ "source": "C-ZB-RD1 Functional Testing - Firmware Update 200726.xlsx / C-ZB-RD1 - Move Tests",
+ "description": "由 build_rd1_scripts.py 从客户测试表格自动生成；旋钮动作与灯光观察为人工步骤。",
+ "endpoint": 1,
+ "setup": {
+  "bind": true,
+  "reporting": [
+   {
+    "attribute": "onOff",
+    "min": 0,
+    "max": 3600
+   },
+   {
+    "attribute": "currentLevel",
+    "min": 1,
+    "max": 3600,
+    "change": 1
+   }
+  ],
+  "note": "假定与 Hubitat 通用 Zigbee 调光驱动一致（level min 1s / max 3600s / change 1）；如与客户 Hubitat 实际配置不同请修改。"
+ },
+ "cases": [
+  {
+   "id": "move-01",
+   "number": "Move 1",
+   "sheet": "Move Tests",
+   "order": 3001,
+   "title": "Move(开关) 上 rate 255",
+   "notes": "Tests 1 - 2 test move (with on/off) functionality with rate 0xFF (255)；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 255,
+     "observe": "观察：灯从熄灭渐亮到 100%，持续数秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6853,
+     "quiet_ms": 2500,
+     "min_ms": 2853,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 98,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 195,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，持续数秒"
+    }
+   ]
+  },
+  {
+   "id": "move-02",
+   "number": "Move 2",
+   "sheet": "Move Tests",
+   "order": 3002,
+   "title": "Move(开关) 下 rate 255",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 254,
+     "label": "前置状态：开，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 255,
+     "observe": "观察：灯从 100% 渐暗至熄灭，持续数秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6853,
+     "quiet_ms": 2500,
+     "min_ms": 2853,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 163,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 67,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "down"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，持续数秒"
+    }
+   ]
+  },
+  {
+   "id": "move-03",
+   "number": "Move 3",
+   "sheet": "Move Tests",
+   "order": 3003,
+   "title": "Move(开关) 上 rate 25",
+   "notes": "Tests 3 - 4 test move (with on/off) functionality with rate 0x19 (25)；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 25,
+     "observe": "观察：灯从熄灭渐亮到 100%，约 10 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 14000,
+     "quiet_ms": 2500,
+     "min_ms": 10000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 29,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 55,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 82,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 107,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 135,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 160,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 188,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 212,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 238,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 10000,
+       "tolerance_ms": 3500
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 10 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-04",
+   "number": "Move 4",
+   "sheet": "Move Tests",
+   "order": 3004,
+   "title": "Move(开关) 下 rate 25",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 254,
+     "label": "前置状态：开，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 25,
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 10 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 14000,
+     "quiet_ms": 2500,
+     "min_ms": 10000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 228,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 202,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 176,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 150,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 121,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 97,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 69,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 46,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 20,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "down"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 10000,
+       "tolerance_ms": 3500
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 10 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-05",
+   "number": "Move 5",
+   "sheet": "Move Tests",
+   "order": 3005,
+   "title": "Move(开关) 上 rate 25",
+   "notes": "Tests 5 - 6 repeat tests 3 - 4 but with level at start 1% and both off and on state；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 1,
+     "label": "前置状态：关，亮度 1%（level 1）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 25,
+     "observe": "观察：灯从熄灭渐亮到 100%，约 10 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 14000,
+     "quiet_ms": 2500,
+     "min_ms": 10000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 29,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 55,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 84,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 108,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 133,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 159,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 186,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 211,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 239,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 10000,
+       "tolerance_ms": 3500
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 10 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-06",
+   "number": "Move 6",
+   "sheet": "Move Tests",
+   "order": 3006,
+   "title": "Move(开关) 上 rate 25",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 1,
+     "label": "前置状态：开，亮度 1%（level 1）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 25,
+     "observe": "观察：灯从 1% 渐亮到 100%，约 10 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 14000,
+     "quiet_ms": 2500,
+     "min_ms": 10000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 12,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 36,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 62,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 88,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 116,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 140,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 166,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 194,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 219,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 247,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 10000,
+       "tolerance_ms": 3500
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 1% 渐亮到 100%，约 10 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-07",
+   "number": "Move 7",
+   "sheet": "Move Tests",
+   "order": 3007,
+   "title": "Move(开关) 下 rate 25 → 发送 Stop",
+   "notes": "Tests 7 - 9 test move (with on/off) functionality with direction DOWN and rate 0x19 (25) and then STOP；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 254,
+     "label": "前置状态：开，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 25,
+     "observe": "观察：灯从 100% 开始渐暗，2 秒后自动发送 Stop"
+    },
+    {
+     "type": "expect",
+     "window_ms": 2000,
+     "quiet_ms": null,
+     "min_ms": 2000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 228,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 222,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 176,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "down"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 开始渐暗，2 秒后自动发送 Stop"
+    },
+    {
+     "type": "command",
+     "command": "stop",
+     "observe": "观察：灯停止渐暗"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4000,
+     "quiet_ms": 2500,
+     "min_ms": 0,
+     "read_back": [
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 168,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "report_matches_read",
+       "attribute": "currentLevel",
+       "tolerance": 1
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯停止渐暗"
+    }
+   ]
+  },
+  {
+   "id": "move-08",
+   "number": "Move 8",
+   "sheet": "Move Tests",
+   "order": 3008,
+   "title": "Move(开关) 下 rate 25 → 发送 Stop",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 168,
+     "label": "前置状态：开，亮度 66%（level 168）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 25,
+     "observe": "观察：灯从 66% 开始渐暗，4 秒后自动发送 Stop"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4000,
+     "quiet_ms": null,
+     "min_ms": 4000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 142,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 116,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "down"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 66% 开始渐暗，4 秒后自动发送 Stop"
+    },
+    {
+     "type": "command",
+     "command": "stop",
+     "observe": "观察：灯停止渐暗"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4000,
+     "quiet_ms": 2500,
+     "min_ms": 0,
+     "read_back": [
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 99,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "report_matches_read",
+       "attribute": "currentLevel",
+       "tolerance": 1
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯停止渐暗"
+    }
+   ]
+  },
+  {
+   "id": "move-09",
+   "number": "Move 9",
+   "sheet": "Move Tests",
+   "order": 3009,
+   "title": "Move(开关) 下 rate 25",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 99,
+     "label": "前置状态：开，亮度 39%（level 99）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 25,
+     "observe": "观察：灯从 36% 渐暗至熄灭，持续数秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 14160,
+     "quiet_ms": 2500,
+     "min_ms": 10160,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 70,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 46,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 21,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "down"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 36% 渐暗至熄灭，持续数秒"
+    }
+   ]
+  },
+  {
+   "id": "move-10",
+   "number": "Move 10",
+   "sheet": "Move Tests",
+   "order": 3010,
+   "title": "Move(开关) 下 rate 25",
+   "notes": "Test 10 checks for non-operation；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 25,
+     "observe": "观察：灯无任何变化"
+    },
+    {
+     "type": "expect",
+     "window_ms": 6000,
+     "quiet_ms": 2500,
+     "min_ms": 0,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯无任何变化"
+    }
+   ]
+  },
+  {
+   "id": "move-11",
+   "number": "Move 11",
+   "sheet": "Move Tests",
+   "order": 3011,
+   "title": "Move(开关) 上 rate 89",
+   "notes": "Tests 11 - 12 repeat tests 3 - 4 but with a rate of 0x59 (89) and defaultMoveRate 10% (0x19)；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 25
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=25"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 89,
+     "observe": "观察：灯从熄灭渐亮到 100%，约 3 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 7000,
+     "quiet_ms": 2500,
+     "min_ms": 3000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 141,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 3000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 3 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-12",
+   "number": "Move 12",
+   "sheet": "Move Tests",
+   "order": 3012,
+   "title": "Move(开关) 下 rate 89",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 25
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=25"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 254,
+     "label": "前置状态：开，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 89,
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 3 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 7000,
+     "quiet_ms": 2500,
+     "min_ms": 3000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 122,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "down"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 3000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 3 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-13",
+   "number": "Move 13",
+   "sheet": "Move Tests",
+   "order": 3013,
+   "title": "Move(开关) 上 rate 254",
+   "notes": "Tests 13 - 14 repeat tests 3 - 4 but with a rate of 0xFE (254) to simulate \"as fast as possible\"；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 25
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=25"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 254,
+     "label": "前置状态：关，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 254,
+     "observe": "观察：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-14",
+   "number": "Move 14",
+   "sheet": "Move Tests",
+   "order": 3014,
+   "title": "Move(开关) 下 rate 254",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 25
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=25"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 254,
+     "label": "前置状态：开，亮度 100%（level 254）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "down",
+     "rate": 254,
+     "observe": "观察：灯从 100% 渐暗至熄灭，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": false
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 1,
+       "tolerance": 2
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 100% 渐暗至熄灭，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-15",
+   "number": "Move 15",
+   "sheet": "Move Tests",
+   "order": 3015,
+   "title": "Move(开关) 上 rate 254",
+   "notes": "Tests 15 - 16 repeat tests 13 - 14 but with a level at start 1% and both off and on state；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 25
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=25"
+    },
+    {
+     "type": "set_state",
+     "on": false,
+     "level": 1,
+     "label": "前置状态：关，亮度 1%（level 1）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 254,
+     "observe": "观察：灯从熄灭渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "onOff",
+       "value": true
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从熄灭渐亮到 100%，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-16",
+   "number": "Move 16",
+   "sheet": "Move Tests",
+   "order": 3016,
+   "title": "Move(开关) 上 rate 254",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 25
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=25"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 1,
+     "label": "前置状态：开，亮度 1%（level 1）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 254,
+     "observe": "观察：灯从 1% 渐亮到 100%，约 1 秒"
+    },
+    {
+     "type": "expect",
+     "window_ms": 5000,
+     "quiet_ms": 2500,
+     "min_ms": 1000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 102,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      },
+      {
+       "kind": "duration",
+       "attribute": "currentLevel",
+       "ms": 1000,
+       "tolerance_ms": 1200
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 1% 渐亮到 100%，约 1 秒"
+    }
+   ]
+  },
+  {
+   "id": "move-17",
+   "number": "Move 17",
+   "sheet": "Move Tests",
+   "order": 3017,
+   "title": "Move(开关) 上 rate 25 → 发送 Stop",
+   "notes": "Tests 17 - 19 repeat tests 7 - 9 but with direction UP；客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 1,
+     "label": "前置状态：开，亮度 1%（level 1）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 25,
+     "observe": "观察：灯从 1% 开始渐亮，4 秒后自动发送 Stop"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4000,
+     "quiet_ms": null,
+     "min_ms": 4000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 12,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 36,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 62,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 88,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 1% 开始渐亮，4 秒后自动发送 Stop"
+    },
+    {
+     "type": "command",
+     "command": "stop",
+     "observe": "观察：灯停止渐亮"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4000,
+     "quiet_ms": 2500,
+     "min_ms": 0,
+     "read_back": [
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 116,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "report_matches_read",
+       "attribute": "currentLevel",
+       "tolerance": 1
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯停止渐亮"
+    }
+   ]
+  },
+  {
+   "id": "move-18",
+   "number": "Move 18",
+   "sheet": "Move Tests",
+   "order": 3018,
+   "title": "Move(开关) 上 rate 25 → 发送 Stop",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 117,
+     "label": "前置状态：开，亮度 46%（level 117）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 25,
+     "observe": "观察：灯从 46% 开始渐亮，3 秒后自动发送 Stop"
+    },
+    {
+     "type": "expect",
+     "window_ms": 3000,
+     "quiet_ms": null,
+     "min_ms": 3000,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 125,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 150,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 175,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 46% 开始渐亮，3 秒后自动发送 Stop"
+    },
+    {
+     "type": "command",
+     "command": "stop",
+     "observe": "观察：灯停止渐亮"
+    },
+    {
+     "type": "expect",
+     "window_ms": 4000,
+     "quiet_ms": 2500,
+     "min_ms": 0,
+     "read_back": [
+      "currentLevel"
+     ],
+     "matchers": [
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 183,
+       "tolerance": 2,
+       "severity": "info"
+      },
+      {
+       "kind": "report_matches_read",
+       "attribute": "currentLevel",
+       "tolerance": 1
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯停止渐亮"
+    }
+   ]
+  },
+  {
+   "id": "move-19",
+   "number": "Move 19",
+   "sheet": "Move Tests",
+   "order": 3019,
+   "title": "Move(开关) 上 rate 25",
+   "notes": "客户表格结果：PASS",
+   "steps": [
+    {
+     "type": "write_attributes",
+     "attributes": {
+      "onLevel": 255,
+      "onTransitionTime": 10,
+      "offTransitionTime": 10,
+      "defaultMoveRate": 89
+     },
+     "label": "设置属性 onLevel=255, onTransitionTime=10, offTransitionTime=10, defaultMoveRate=89"
+    },
+    {
+     "type": "set_state",
+     "on": true,
+     "level": 183,
+     "label": "前置状态：开，亮度 72%（level 183）"
+    },
+    {
+     "type": "command",
+     "command": "move_on_off",
+     "mode": "up",
+     "rate": 25,
+     "observe": "观察：灯从 72% 开始渐亮"
+    },
+    {
+     "type": "expect",
+     "window_ms": 14160,
+     "quiet_ms": 2500,
+     "min_ms": 10160,
+     "matchers": [
+      {
+       "kind": "no_report",
+       "attribute": "onOff",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "no_report",
+       "attribute": "currentLevel",
+       "within_ms": 600,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 192,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 216,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "contains_value",
+       "attribute": "currentLevel",
+       "value": 242,
+       "tolerance": 6,
+       "severity": "info"
+      },
+      {
+       "kind": "final_value",
+       "attribute": "currentLevel",
+       "value": 254,
+       "tolerance": 2
+      },
+      {
+       "kind": "monotonic",
+       "attribute": "currentLevel",
+       "direction": "up"
+      }
+     ]
+    },
+    {
+     "type": "confirm",
+     "prompt": "确认：灯从 72% 开始渐亮"
+    }
+   ]
+  }
+ ]
+}

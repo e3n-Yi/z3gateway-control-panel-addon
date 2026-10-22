@@ -35,11 +35,15 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 APP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(APP_DIR))
 from device_center import DeviceCenter, ota_header
+from test_runner import ResultStore, ScriptStore, TestRunner, render_html_report
 
 STATIC_DIR = APP_DIR / "static"
 CONFIG_DIR = APP_DIR / "config"
 DATA_DIR = Path(os.environ.get("Z3_PANEL_DATA_DIR", str(APP_DIR / "data"))).expanduser().resolve()
 LOG_DIR = DATA_DIR / "logs"
+BUILTIN_TEST_SCRIPTS_DIR = APP_DIR / "test-scripts"
+TEST_SCRIPTS_DIR = Path(os.environ.get("Z3_PANEL_TEST_SCRIPTS_DIR", str(DATA_DIR / "test-scripts"))).expanduser().resolve()
+TEST_RESULTS_DIR = Path(os.environ.get("Z3_PANEL_TEST_RESULTS_DIR", str(DATA_DIR / "test-results"))).expanduser().resolve()
 COMMANDS_FILE = CONFIG_DIR / "commands.json"
 DEVICES_FILE = DATA_DIR / "devices.json"
 # Bound both the replay payload and each slow browser's pending live output.
@@ -793,6 +797,22 @@ class GatewayManager:
         with self.lock:
             self.subscribers.discard(q)
 
+    def publish_transient(self, payload: dict[str, Any]) -> None:
+        # Live test progress for current subscribers only: never stored in the
+        # replay history, so it cannot displace bounded gateway logs.
+        event = {"ts": now_iso(), "kind": "test", "text": "", "test": payload}
+        with self.lock:
+            for q in self.subscribers:
+                try:
+                    q.put_nowait(event)
+                except queue.Full:
+                    while True:
+                        try:
+                            q.get_nowait()
+                        except queue.Empty:
+                            break
+                    q.put_nowait(self._log_snapshot())
+
     def _read_loop(self) -> None:
         while True:
             with self.lock:
@@ -1287,6 +1307,25 @@ zero_cross_calibrator = ZeroCrossCalibrator(manager)
 device_center = DeviceCenter(DATA_DIR, manager, read_json_file(COMMANDS_FILE, {"groups": []}), OTA_DIR, zigbee_registry.list_devices())
 
 
+def gateway_eui64() -> str | None:
+    for source in (zigbee_registry.list_devices(), device_center.list()):
+        for device in source:
+            if device.get("role") == "gateway" and device.get("eui64"):
+                return str(device["eui64"])
+    return None
+
+
+test_runner = TestRunner(
+    manager,
+    device_center,
+    ScriptStore(BUILTIN_TEST_SCRIPTS_DIR, TEST_SCRIPTS_DIR),
+    ResultStore(TEST_RESULTS_DIR),
+    publish=manager.publish_transient,
+    gateway_eui64=gateway_eui64,
+    busy_check=lambda: "自动过零校准" if zero_cross_calibrator.status().get("active") else None,
+)
+
+
 def list_serial_devices() -> list[dict[str, str]]:
     devices: list[dict[str, str]] = []
     seen_realpaths: set[str] = set()
@@ -1558,6 +1597,9 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         try:
             parsed = urlparse(self.path)
+            if parsed.path.startswith("/api/tests/"):
+                self.handle_tests_delete(parsed.path)
+                return
             prefix = "/api/ota/files/"
             if not parsed.path.startswith(prefix):
                 self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
@@ -1629,6 +1671,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         elif path == "/api/browse":
             raw_path = query.get("path", [str(ALLOWED_ROOT)])[0]
             self.send_json(browse_directory(raw_path))
+        elif path.startswith("/api/tests/"):
+            self.handle_tests_get(path, query)
         elif path == "/api/logs/current":
             self.send_json({"events": manager.snapshot()})
         elif path == "/api/logs/stream":
@@ -1664,11 +1708,16 @@ class RequestHandler(BaseHTTPRequestHandler):
                 device_center.discover(device["id"])
             self.send_json(result)
         elif path == "/api/stop":
+            test_runner.abort("gateway-stop")
             device_center.stop()
             zero_cross_calibrator.stop("gateway-stop")
             self.send_json(manager.stop())
         elif path == "/api/zerocross/start":
+            if test_runner.status().get("active"):
+                raise ValueError("自动测试正在运行，不能开始过零校准")
             self.send_json(zero_cross_calibrator.start(payload))
+        elif path.startswith("/api/tests/"):
+            self.handle_tests_post(path, payload)
         elif path == "/api/zerocross/stop":
             self.send_json(zero_cross_calibrator.stop("user-stop"))
         elif path == "/api/send":
@@ -1686,6 +1735,67 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_json({"devices": device_center.list()})
         else:
             self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+
+    def handle_tests_get(self, path: str, query: dict[str, list[str]]) -> None:
+        parts = [unquote(part) for part in path.strip("/").split("/")[2:]]
+        try:
+            if parts == ["scripts"]:
+                self.send_json({"scripts": test_runner.scripts.list()})
+            elif len(parts) == 2 and parts[0] == "scripts":
+                self.send_json({"script": test_runner.scripts.get(parts[1])})
+            elif parts == ["status"]:
+                self.send_json(test_runner.status())
+            elif parts == ["results"]:
+                self.send_json({"results": test_runner.results.list()})
+            elif len(parts) == 2 and parts[0] == "results":
+                self.send_json({"result": test_runner.results.get(parts[1])})
+            elif len(parts) == 3 and parts[0] == "results" and parts[2] == "report.html":
+                result = test_runner.results.get(parts[1])
+                body = render_html_report(result).encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                if query.get("download", ["0"])[0] == "1":
+                    self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(parts[1] + '.html')}")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+        except KeyError:
+            self.send_json({"error": "测试脚本或结果不存在"}, status=HTTPStatus.NOT_FOUND)
+
+    def handle_tests_post(self, path: str, payload: dict[str, Any]) -> None:
+        action = path[len("/api/tests/"):]
+        if action == "scripts":
+            try:
+                self.send_json({"script": test_runner.scripts.save(str(payload.get("content") or ""),
+                                                                   overwrite=bool(payload.get("overwrite")))},
+                               status=HTTPStatus.CREATED)
+            except FileExistsError as exc:
+                self.send_json({"error": str(exc)}, status=HTTPStatus.CONFLICT)
+        elif action == "run":
+            self.send_json(test_runner.start(payload))
+        elif action == "abort":
+            self.send_json(test_runner.abort("user"))
+        elif action == "respond":
+            self.send_json(test_runner.respond(payload))
+        else:
+            self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+
+    def handle_tests_delete(self, path: str) -> None:
+        parts = [unquote(part) for part in path.strip("/").split("/")[2:]]
+        try:
+            if len(parts) == 2 and parts[0] == "scripts":
+                self.send_json({"deleted": test_runner.scripts.delete(parts[1])})
+            elif len(parts) == 2 and parts[0] == "results":
+                self.send_json({"deleted": test_runner.results.delete(parts[1])})
+            else:
+                self.send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+        except KeyError:
+            self.send_json({"error": "测试脚本或结果不存在"}, status=HTTPStatus.NOT_FOUND)
+        except PermissionError as exc:
+            self.send_json({"error": str(exc)}, status=HTTPStatus.FORBIDDEN)
 
     def send_ota_file(self, raw_name: str) -> None:
         try:

@@ -1463,6 +1463,8 @@ function connectLogs() {
       deviceLogEvents = (payload.deviceEvents || []).slice(-400);
       appendLog(payload.text || "");
       scheduleZigbeeDeviceRefresh();
+      // Test progress is not part of the replay history; let the page resync.
+      document.dispatchEvent(new Event("z3-test-resync"));
     } catch {
       // Ignore malformed snapshots; the next reconnect can recover them.
     }
@@ -1474,6 +1476,10 @@ function connectLogs() {
       payload = JSON.parse(event.data);
     } catch {
       appendLog(event.data);
+      return;
+    }
+    if (payload.kind === "test") {
+      document.dispatchEvent(new CustomEvent("z3-test-event", { detail: payload.test || {} }));
       return;
     }
     const text = payload.text || "";

@@ -3,155 +3,237 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <title>Z3Gateway Control Panel</title>
     <link rel="stylesheet" href="styles.css" />
-
   </head>
   <body>
     <header class="topbar">
-<div class="brand"><span class="brand-mark" aria-hidden="true">Z3</span><div><h1>Z3Gateway</h1><p>Zigbee 网关控制台</p></div></div>
-<div class="connection"><div class="status-pill" id="run-pill">STOPPED</div><p id="status-line">未连接</p></div>
-<span class="preview-badge">0.2.3 · 设备中心</span>
-</header>
-<nav class="workspace-nav" aria-label="工作区"><div role="tablist">
-<button type="button" id="tab-console" role="tab" aria-selected="true" aria-controls="view-console" data-view="console">控制台</button>
-<button type="button" id="tab-devices" role="tab" aria-selected="false" aria-controls="view-devices" data-view="devices">设备记录</button>
-<button type="button" id="tab-ota" role="tab" aria-selected="false" aria-controls="view-ota" data-view="ota">OTA 文件</button>
-<button type="button" id="tab-settings" role="tab" aria-selected="false" aria-controls="view-settings" data-view="settings">启动设置</button>
-</div><span class="workspace-caption">选择命令，查看参数与发送预览</span></nav>
-<main class="layout">
-<div id="view-console" class="workspace console-workspace" role="tabpanel" aria-labelledby="tab-console"><section class="panel command-panel">
-        <div class="panel-title">
-          <h2>命令</h2>
-          <input id="command-filter" class="compact-input" placeholder="搜索命令" aria-label="搜索命令" />
-        </div>
-        <div id="group-tabs" class="tabs"></div>
-        <div class="command-split">
-          <div id="command-list" class="command-list"></div>
-        </div>
-      </section><aside id="command-drawer" class="panel command-drawer" aria-label="命令详情">
-        <div class="drawer-title">
-          <h3 id="selected-title">未选择命令</h3>
-          <div class="drawer-actions">
-            <button id="toggle-command-drawer-pin" class="ghost pin-toggle" type="button" aria-pressed="true">已钉住</button>
-            <button id="close-command-drawer" class="ghost" type="button">收起</button>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">Z3</span>
+        <div><h1>Z3Gateway</h1><p>Zigbee 网关控制台</p></div>
+      </div>
+      <div class="connection">
+        <div class="status-pill" id="run-pill">STOPPED</div>
+        <p id="status-line">未连接</p>
+      </div>
+      <span class="preview-badge">0.3.0 · 自动测试</span>
+    </header>
+    <nav class="workspace-nav" aria-label="工作区">
+      <div role="tablist">
+        <button type="button" id="tab-devices" role="tab" aria-selected="false" aria-controls="view-devices" data-view="devices">设备</button>
+        <button type="button" id="tab-tests" role="tab" aria-selected="false" aria-controls="view-tests" data-view="tests">自动测试</button>
+        <button type="button" id="tab-ota" role="tab" aria-selected="false" aria-controls="view-ota" data-view="ota">OTA 文件</button>
+        <button type="button" id="tab-console" role="tab" aria-selected="true" aria-controls="view-console" data-view="console">高级控制台</button>
+        <button type="button" id="tab-settings" role="tab" aria-selected="false" aria-controls="view-settings" data-view="settings">网关设置</button>
+      </div>
+      <span class="workspace-caption">选择命令，查看参数与发送预览</span>
+    </nav>
+    <main class="layout">
+      <div id="view-console" class="workspace console-workspace" role="tabpanel" aria-labelledby="tab-console">
+        <section class="panel command-panel">
+          <div class="panel-title">
+            <h2>命令</h2>
+            <input id="command-filter" class="compact-input" placeholder="搜索命令" aria-label="搜索命令" />
           </div>
-        </div>
-        <div id="param-form" class="param-form drawer-form"></div>
-        <div class="drawer-footer">
+          <div id="group-tabs" class="tabs"></div>
+          <div class="command-split">
+            <div id="command-list" class="command-list"></div>
+          </div>
+        </section>
+        <aside id="command-drawer" class="panel command-drawer" aria-label="命令详情">
+          <div class="drawer-title">
+            <h3 id="selected-title">未选择命令</h3>
+            <div class="drawer-actions">
+              <button id="toggle-command-drawer-pin" class="ghost pin-toggle" type="button" aria-pressed="true">已钉住</button>
+              <button id="close-command-drawer" class="ghost" type="button">收起</button>
+            </div>
+          </div>
+          <div id="param-form" class="param-form drawer-form"></div>
+          <div class="drawer-footer">
+            <label class="field wide">
+              <span>发送预览</span>
+              <textarea id="command-preview" readonly spellcheck="false"></textarea>
+            </label>
+            <button id="send-selected" class="primary wide-button" type="button">发送选中命令</button>
+          </div>
+        </aside>
+        <section class="panel log-panel">
+          <div class="panel-title">
+            <h2 title="页面仅保留最近 1500 行、最多 128K 字符；完整日志仍保存在后台">最近日志</h2>
+            <div class="toolbar">
+              <input id="log-search" class="compact-input" placeholder="搜索日志" aria-label="搜索日志" />
+              <button id="focus-log" type="button" class="ghost" aria-pressed="false">专注日志</button>
+              <button id="copy-log" class="ghost" type="button">复制</button>
+              <button id="clear-log" class="ghost" type="button">清空</button>
+            </div>
+          </div>
+          <pre id="log-output"></pre>
+        </section>
+        <details class="panel manual-panel">
+          <summary>手动输入命令</summary>
+          <div class="panel-title">
+            <h2>手动输入</h2>
+            <button id="send-manual" class="primary" type="button">发送</button>
+          </div>
+          <textarea id="manual-command" spellcheck="false" placeholder="zcl on-off toggle&#10;send 0x67D0 1 1"></textarea>
+        </details>
+      </div>
+
+      <div id="view-devices" class="workspace single-workspace" role="tabpanel" aria-labelledby="tab-devices" hidden>
+        <section class="panel zigbee-devices-panel">
+          <div class="panel-title">
+            <h2>设备记录</h2>
+            <div class="toolbar compact-toolbar">
+              <button id="clear-devices" class="ghost danger-text" type="button">清空记录</button>
+              <button id="reparse-devices" class="ghost" type="button">重扫日志</button>
+            </div>
+          </div>
+          <div id="zigbee-device-list" class="zigbee-device-list">
+            <p class="muted">暂无设备。</p>
+          </div>
+        </section>
+      </div>
+
+      <div id="view-tests" class="workspace tests-workspace" role="tabpanel" aria-labelledby="tab-tests" hidden>
+        <section class="panel tests-library" aria-labelledby="tests-library-title">
+          <div class="panel-title">
+            <h2 id="tests-library-title">测试脚本</h2>
+            <div class="toolbar">
+              <button id="tests-upload" class="ghost" type="button">上传脚本</button>
+              <input id="tests-upload-input" class="ota-file-input" type="file" accept=".json,application/json" />
+            </div>
+          </div>
+          <div id="tests-script-list" class="tests-script-list"><p class="muted">加载中…</p></div>
+        </section>
+        <section class="panel tests-cases" aria-labelledby="tests-script-title">
+          <div class="panel-title">
+            <div class="title-stack">
+              <h2 id="tests-script-title">用例</h2>
+              <p id="tests-script-meta" class="muted">选择左侧脚本</p>
+            </div>
+            <div class="toolbar">
+              <input id="tests-case-filter" class="compact-input" placeholder="筛选编号或标题" aria-label="筛选用例" />
+              <button id="tests-select-all" class="ghost" type="button">全选</button>
+              <button id="tests-select-auto" class="ghost" type="button">仅无需旋钮</button>
+              <button id="tests-select-none" class="ghost" type="button">清空</button>
+            </div>
+          </div>
+          <div id="tests-case-list" class="tests-case-list"></div>
+          <div class="tests-run-bar">
+            <div class="tests-run-fields">
+              <label class="field"><span>目标设备</span><select id="tests-device"></select></label>
+              <label class="field"><span>端点</span><select id="tests-endpoint"></select></label>
+            </div>
+            <div class="tests-run-options">
+              <label class="check"><input type="checkbox" id="tests-opt-setup" checked /><span>自动绑定并配置上报</span></label>
+              <label class="check"><input type="checkbox" id="tests-opt-manual" checked /><span>灯光变化需人工确认</span></label>
+              <label class="check"><input type="checkbox" id="tests-opt-stop" /><span>失败即停止</span></label>
+            </div>
+            <div class="tests-run-actions">
+              <span id="tests-selection-count" class="muted">未选择用例</span>
+              <button id="tests-start" class="primary" type="button">开始测试</button>
+            </div>
+          </div>
+        </section>
+        <section class="panel tests-live" aria-labelledby="tests-live-title" aria-live="polite">
+          <div class="panel-title">
+            <h2 id="tests-live-title">运行状态</h2>
+            <button id="tests-abort" class="danger" type="button" disabled>中止</button>
+          </div>
+          <div id="tests-status" class="tests-status"></div>
+          <div id="tests-prompt" class="tests-prompt" hidden></div>
+          <pre id="tests-log" class="tests-log"></pre>
+        </section>
+        <section class="panel tests-results" aria-labelledby="tests-results-title">
+          <div class="panel-title">
+            <h2 id="tests-results-title">历史结果</h2>
+            <button id="tests-results-refresh" class="ghost" type="button">刷新</button>
+          </div>
+          <div id="tests-result-list" class="tests-result-list"><p class="muted">暂无结果。</p></div>
+        </section>
+      </div>
+
+      <div id="view-ota" class="workspace single-workspace" role="tabpanel" aria-labelledby="tab-ota" hidden>
+        <section class="panel ota-panel">
+          <div class="panel-title">
+            <div class="title-stack">
+              <h2>OTA 文件</h2>
+              <p id="ota-directory" class="muted ota-directory">加载中…</p>
+            </div>
+            <button id="ota-refresh" class="ghost" type="button">刷新</button>
+          </div>
+          <div id="ota-drop-zone" class="ota-drop-zone" tabindex="0" role="button" aria-label="选择或拖入 OTA 文件">
+            <strong>拖入 OTA 文件</strong>
+            <span>或点击选择文件；可一次选择多个</span>
+            <button id="ota-choose" class="primary" type="button">选择文件</button>
+            <input id="ota-file-input" class="ota-file-input" type="file" multiple />
+          </div>
+          <div id="ota-progress" class="ota-progress hidden" aria-live="polite">
+            <div class="ota-progress-line">
+              <span id="ota-progress-label">准备上传</span>
+              <span id="ota-progress-percent">0%</span>
+            </div>
+            <progress id="ota-progress-bar" max="100" value="0"></progress>
+          </div>
+          <div id="ota-file-list" class="ota-file-list">
+            <p class="muted">暂无 OTA 文件。</p>
+          </div>
+        </section>
+      </div>
+
+      <div id="view-settings" class="workspace settings-workspace" role="tabpanel" aria-labelledby="tab-settings" hidden>
+        <section class="panel launch-panel">
+          <div class="panel-title">
+            <h2>启动</h2>
+            <button id="refresh-devices" class="ghost" type="button">刷新串口</button>
+          </div>
           <label class="field wide">
-            <span>发送预览</span>
-            <textarea id="command-preview" readonly spellcheck="false"></textarea>
+            <span>网关程序</span>
+            <div class="inline-control">
+              <input id="executable" autocomplete="off" />
+              <button id="browse-default" type="button">浏览</button>
+            </div>
           </label>
-          <button id="send-selected" class="primary wide-button" type="button">发送选中命令</button>
-        </div>
-      </aside><section class="panel log-panel">
-        <div class="panel-title">
-          <h2 title="页面仅保留最近 1500 行、最多 128K 字符；完整日志仍保存在后台">最近日志</h2>
-          <div class="toolbar">
-            <input id="log-search" class="compact-input" placeholder="搜索日志" aria-label="搜索日志" />
-            <button id="focus-log" type="button" class="ghost" aria-pressed="false">专注日志</button>
-            <button id="copy-log" class="ghost" type="button">复制</button>
-            <button id="clear-log" class="ghost" type="button">清空</button>
+          <div class="launch-grid">
+            <label class="field">
+              <span>串口</span>
+              <input id="serial-port" list="serial-list" placeholder="/dev/ttyUSB0" />
+              <datalist id="serial-list"></datalist>
+            </label>
+            <label class="field">
+              <span>网络索引</span>
+              <input id="network-index" inputmode="numeric" value="1" />
+            </label>
+            <label class="field">
+              <span>波特率</span>
+              <input id="baud-rate" inputmode="numeric" value="115200" />
+            </label>
+            <div class="button-row">
+              <button id="start-btn" class="primary" type="button">启动</button>
+              <button id="stop-btn" class="danger" type="button">停止</button>
+            </div>
           </div>
-        </div>
-        <pre id="log-output"></pre>
-      </section><details class="panel manual-panel"><summary>手动输入命令</summary>
-        <div class="panel-title">
-          <h2>手动输入</h2>
-          <button id="send-manual" class="primary" type="button">发送</button>
-        </div>
-        <textarea id="manual-command" spellcheck="false" placeholder="zcl on-off toggle&#10;send 0x67D0 1 1"></textarea>
-      </details></div>
-<div id="view-devices" class="workspace single-workspace" role="tabpanel" aria-labelledby="tab-devices" hidden><section class="panel zigbee-devices-panel">
-        <div class="panel-title">
-          <h2>设备记录</h2>
-          <div class="toolbar compact-toolbar">
-            <button id="clear-devices" class="ghost danger-text" type="button">清空记录</button>
-            <button id="reparse-devices" class="ghost" type="button">重扫日志</button>
+        </section>
+        <details class="panel browser-panel">
+          <summary class="browser-summary">
+            <span>路径选择</span>
+            <span class="summary-hint">展开</span>
+          </summary>
+          <div class="browser-body">
+            <div class="panel-title compact-title">
+              <h2>路径选择</h2>
+              <button id="browser-up" class="ghost" type="button">上级</button>
+            </div>
+            <div class="inline-control">
+              <input id="browser-path" autocomplete="off" />
+              <button id="browser-go" type="button">打开</button>
+            </div>
+            <div id="browser-list" class="browser-list"></div>
           </div>
-        </div>
-        <div id="zigbee-device-list" class="zigbee-device-list">
-          <p class="muted">暂无设备。</p>
-        </div>
-      </section></div>
-<div id="view-ota" class="workspace single-workspace" role="tabpanel" aria-labelledby="tab-ota" hidden><section class="panel ota-panel">
-        <div class="panel-title">
-          <div>
-            <h2>OTA 文件</h2>
-            <p id="ota-directory" class="muted ota-directory">加载中…</p>
-          </div>
-          <button id="ota-refresh" class="ghost" type="button">刷新</button>
-        </div>
-        <div id="ota-drop-zone" class="ota-drop-zone" tabindex="0" role="button" aria-label="选择或拖入 OTA 文件">
-          <strong>拖入 OTA 文件</strong>
-          <span>或点击选择文件；可一次选择多个</span>
-          <button id="ota-choose" class="primary" type="button">选择文件</button>
-          <input id="ota-file-input" class="ota-file-input" type="file" multiple />
-        </div>
-        <div id="ota-progress" class="ota-progress hidden" aria-live="polite">
-          <div class="ota-progress-line">
-            <span id="ota-progress-label">准备上传</span>
-            <span id="ota-progress-percent">0%</span>
-          </div>
-          <progress id="ota-progress-bar" max="100" value="0"></progress>
-        </div>
-        <div id="ota-file-list" class="ota-file-list">
-          <p class="muted">暂无 OTA 文件。</p>
-        </div>
-      </section></div>
-<div id="view-settings" class="workspace settings-workspace" role="tabpanel" aria-labelledby="tab-settings" hidden><section class="panel launch-panel">
-        <div class="panel-title">
-          <h2>启动</h2>
-          <button id="refresh-devices" class="ghost" type="button">刷新串口</button>
-        </div>
-
-        <label class="field wide">
-          <span>网关程序</span>
-          <div class="inline-control">
-            <input id="executable" autocomplete="off" />
-            <button id="browse-default" type="button">浏览</button>
-          </div>
-        </label>
-
-        <div class="launch-grid">
-          <label class="field">
-            <span>串口</span>
-            <input id="serial-port" list="serial-list" placeholder="/dev/ttyUSB0" />
-            <datalist id="serial-list"></datalist>
-          </label>
-          <label class="field">
-            <span>网络索引</span>
-            <input id="network-index" inputmode="numeric" value="1" />
-          </label>
-          <label class="field">
-            <span>波特率</span>
-            <input id="baud-rate" inputmode="numeric" value="115200" />
-          </label>
-          <div class="button-row">
-            <button id="start-btn" class="primary" type="button">启动</button>
-            <button id="stop-btn" class="danger" type="button">停止</button>
-          </div>
-        </div>
-      </section><details class="panel browser-panel">
-        <summary class="browser-summary">
-          <span>路径选择</span>
-          <span class="summary-hint">展开</span>
-        </summary>
-        <div class="browser-body">
-          <div class="panel-title compact-title">
-            <h2>路径选择</h2>
-            <button id="browser-up" class="ghost" type="button">上级</button>
-          </div>
-          <div class="inline-control">
-            <input id="browser-path" autocomplete="off" />
-            <button id="browser-go" type="button">打开</button>
-          </div>
-          <div id="browser-list" class="browser-list"></div>
-        </div>
-      </details></div>
-</main>
-
+        </details>
+      </div>
+    </main>
 
     <div id="file-picker" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="file-picker-title">
       <div class="modal-backdrop" id="file-picker-backdrop"></div>
@@ -173,6 +255,6 @@
 
     <script src="app.js"></script>
     <script src="device-center.js"></script>
-
+    <script src="tests.js"></script>
   </body>
 </html>
