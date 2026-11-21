@@ -1536,6 +1536,106 @@ body.log-focus .toast {
   overflow-wrap: anywhere;
 }
 
+.tests-script-filter {
+  flex-shrink: 0;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.tests-project, .tests-group {
+  display: grid;
+  gap: 6px;
+}
+
+.tests-project-body {
+  display: grid;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  margin-left: 6px;
+}
+
+.tests-fold {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  text-align: left;
+  white-space: normal;
+}
+
+.tests-fold:hover {
+  background: var(--primary-soft);
+}
+
+.tests-fold strong {
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.tests-fold small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.tests-fold-mark {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.open > .tests-fold .tests-fold-mark, .open > .tests-group-head .tests-fold-mark {
+  transform: rotate(45deg);
+}
+
+.tests-group-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 2px 4px 2px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.tests-group-head input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.tests-group-head .tests-fold:hover {
+  background: transparent;
+}
+
+.tests-group-head .tests-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.tests-group-body {
+  display: grid;
+  gap: 6px;
+}
+
 .tests-run-bar {
   display: grid;
   flex-shrink: 0;

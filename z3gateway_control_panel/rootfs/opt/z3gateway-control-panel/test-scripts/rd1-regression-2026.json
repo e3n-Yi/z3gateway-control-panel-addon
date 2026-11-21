@@ -2,6 +2,7 @@
  "format": "z3-test-script/1",
  "id": "rd1-regression-2026",
  "title": "RD1 2026 回归用例",
+ "project": "C-ZB-RD1（D590M-ZG）",
  "source": "Hue 互通问题与 Options/ExecuteIfOff 修复（2026）",
  "description": "Hue 命令序列、Level Control Options、关灯后立即调光与渐变中操作旋钮。20/40 ms 间隔需要第二阶段精确时序。",
  "endpoint": 1,
@@ -76,7 +77,8 @@
       }
      ]
     }
-   ]
+   ],
+   "group": "CLI 时序基准"
   },
   {
    "id": "hue-seq-20",
@@ -160,7 +162,8 @@
      "type": "confirm",
      "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
     }
-   ]
+   ],
+   "group": "Hue 命令序列"
   },
   {
    "id": "hue-seq-40",
@@ -244,7 +247,8 @@
      "type": "confirm",
      "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
     }
-   ]
+   ],
+   "group": "Hue 命令序列"
   },
   {
    "id": "hue-seq-100",
@@ -328,7 +332,8 @@
      "type": "confirm",
      "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
     }
-   ]
+   ],
+   "group": "Hue 命令序列"
   },
   {
    "id": "hue-seq-300",
@@ -412,7 +417,8 @@
      "type": "confirm",
      "prompt": "确认：灯最终亮在约 50%，没有停留在最低亮度"
     }
-   ]
+   ],
+   "group": "Hue 命令序列"
   },
   {
    "id": "options-execute-if-off",
@@ -486,7 +492,8 @@
      },
      "label": "恢复 Options=0"
     }
-   ]
+   ],
+   "group": "Options / ExecuteIfOff"
   },
   {
    "id": "options-ignored-when-off",
@@ -558,7 +565,8 @@
      },
      "label": "恢复 Options=0"
     }
-   ]
+   ],
+   "group": "Options / ExecuteIfOff"
   },
   {
    "id": "options-override-when-off",
@@ -632,7 +640,8 @@
      },
      "label": "恢复 Options=0"
     }
-   ]
+   ],
+   "group": "Options / ExecuteIfOff"
   },
   {
    "id": "off-then-level-300",
@@ -703,7 +712,8 @@
      "type": "confirm",
      "prompt": "确认：灯最终熄灭，没有重新亮起"
     }
-   ]
+   ],
+   "group": "关灯后立即调光"
   },
   {
    "id": "off-then-level-800",
@@ -774,7 +784,8 @@
      "type": "confirm",
      "prompt": "确认：灯最终熄灭，没有重新亮起"
     }
-   ]
+   ],
+   "group": "关灯后立即调光"
   },
   {
    "id": "knob-during-transition",
@@ -837,7 +848,8 @@
      "type": "confirm",
      "prompt": "确认：按下旋钮后灯熄灭，且页面读回的 onOff / currentLevel 与实际一致"
     }
-   ]
+   ],
+   "group": "渐变中操作旋钮"
   },
   {
    "id": "knob-rotate-during-transition",
@@ -902,7 +914,8 @@
      "type": "confirm",
      "prompt": "确认：灯停在旋钮设定的亮度，没有继续渐亮到 100%，且读回的 currentLevel 与实际亮度相符"
     }
-   ]
+   ],
+   "group": "渐变中操作旋钮"
   }
  ]
 }

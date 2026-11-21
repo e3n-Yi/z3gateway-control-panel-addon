@@ -8,6 +8,9 @@
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const LOG_LIMIT = 200;
   const SCRIPT_KEY = "z3-tests-script";
+  const COLLAPSED_KEY = "z3-tests-collapsed";
+  const NO_PROJECT = "未分类";
+  const NO_GROUP = "未分组";
   const VERDICTS = {
     pass: ["通过", "v-pass"], fail: ["不通过", "v-fail"], error: ["错误", "v-error"], inconclusive: ["无法判定", "v-inconclusive"],
     skipped: ["已跳过", ""], "not-run": ["未运行", ""], aborted: ["已中止", ""], running: ["运行中", "v-running"], pending: ["待运行", ""],
@@ -16,11 +19,66 @@
     idle: ["空闲", ""], setup: ["绑定与上报配置", "info"], running: ["运行中", "info"], completed: ["已完成", "ok"],
     aborted: ["已中止", "warn"], error: ["出错", "bad"],
   };
-  const tests = { scripts: [], scriptId: null, script: null, selected: new Set(), devices: [], status: null, results: [], log: [], promptId: null, loading: false };
+  const tests = { scripts: [], scriptId: null, script: null, selected: new Set(), devices: [], status: null, results: [], log: [], promptId: null, loading: false, collapsed: loadCollapsed() };
 
   function visible()
   {
     return panelIsVisible() && !view.hidden;
+  }
+
+  // Collapsed projects ("p:<name>") and case groups ("g:<script>:<name>"), remembered per browser.
+  function loadCollapsed()
+  {
+    try
+    {
+      const saved = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || "[]");
+      return new Set(Array.isArray(saved) ? saved : []);
+    }
+    catch
+    {
+      return new Set();
+    }
+  }
+
+  function setCollapsed(key, collapsed)
+  {
+    if (collapsed)
+    {
+      tests.collapsed.add(key);
+    }
+    else
+    {
+      tests.collapsed.delete(key);
+    }
+    try
+    {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...tests.collapsed].slice(-200)));
+    }
+    catch
+    {
+      // Only a convenience.
+    }
+  }
+
+  function groupKey(name)
+  {
+    return `g:${tests.scriptId}:${name}`;
+  }
+
+  // Cases in first-seen group order; null when the script has fewer than two groups.
+  function caseGroups(cases)
+  {
+    const groups = new Map();
+    for (const c of cases)
+    {
+      const name = c.group || NO_GROUP;
+      if (!groups.has(name))
+      {
+        groups.set(name, []);
+      }
+      groups.get(name).push(c);
+    }
+    return groups.size > 1 ? groups : null;
   }
 
   function chip(map, key)
@@ -42,9 +100,12 @@
   {
     if (step.label) return step.label;
     const names = {
-      write_attributes: () => "写入属性 " + Object.entries(step.attributes || {}).map(([k, v]) => `${k}=${v}`).join(", "),
+      write_attributes: () => "写入属性 " + [
+        ...Object.entries(step.attributes || {}).map(([k, v]) => `${k}=${v && typeof v === "object" ? v.value : v}`),
+        ...(step.raw || []).map((item) => `${item.cluster}:${item.id}=${item.value}`),
+      ].join(", ") + (JSON.stringify(step).includes("expect_status") ? "（检查返回状态）" : ""),
       read: () => "读取 " + (step.attributes || []).join(", "),
-      set_state: () => `前置状态：${step.on ? "开" : "关"}，亮度 ${step.level}`,
+      set_state: () => `前置状态：${step.on ? "开" : "关"}` + (step.level !== undefined && step.level !== null ? `，亮度 ${step.level}` : ""),
       command: () => "发送 " + step.command + (step.level !== undefined ? ` L=${step.level}` : "") + (step.transition !== undefined ? ` T=${step.transition}` : "") + (step.mode !== undefined ? ` ${step.mode}` : "") + (step.rate !== undefined ? ` rate=${step.rate}` : ""),
       burst: () => `连续发送 ${(step.frames || []).length} 帧，间隔 ${step.gap_ms || 0} ms`,
       expect: () => `检查上报（${(step.matchers || []).length} 项）`,
@@ -109,7 +170,8 @@
   async function loadDevices()
   {
     const data = await api("/api/device-center");
-    tests.devices = (data.devices || []).filter((d) => d.role !== "gateway" && Object.values(d.endpoints || {}).some((ep) => (ep.inClusters || []).includes(6)));
+    // Any discovered device: switches without 0x0008 and devices tested only through private clusters too.
+    tests.devices = (data.devices || []).filter((d) => d.role !== "gateway" && Object.keys(d.endpoints || {}).length);
     renderDevices();
   }
 
@@ -153,13 +215,44 @@
       list.innerHTML = '<p class="muted">暂无脚本，请上传 JSON 测试脚本。</p>';
       return;
     }
-    list.innerHTML = tests.scripts.map((item) =>
+    const term = ($t("tests-script-filter")?.value || "").trim().toLowerCase();
+    const projects = new Map();
+    for (const item of tests.scripts)
     {
-      const meta = item.error
-        ? `<small class="danger-text">${esc(item.error.split("\n")[0])}</small>`
-        : `<small>${item.cases} 个用例${item.operator_cases ? ` · ${item.operator_cases} 个需旋钮` : ""}</small>`;
-      return `<button type="button" class="tests-script ${item.id === tests.scriptId ? "active" : ""}" data-script="${esc(item.id)}" title="${esc(item.source || item.id)}" ${item.error ? "disabled" : ""}>`
-        + `<strong>${esc(item.title || item.id)}</strong><span class="chip ${item.builtin ? "" : "info"}">${item.builtin ? "内置" : "已上传"}</span>${meta}</button>`;
+      const project = item.project || NO_PROJECT;
+      if (term && !`${project} ${item.title} ${item.id} ${item.source || ""}`.toLowerCase().includes(term)) continue;
+      if (!projects.has(project)) projects.set(project, []);
+      projects.get(project).push(item);
+    }
+    if (!projects.size)
+    {
+      list.innerHTML = '<p class="muted">没有匹配的脚本。</p>';
+      return;
+    }
+    // Named projects first (alphabetically), "未分类" last.
+    const names = [...projects.keys()].sort((a, b) => (a === NO_PROJECT) - (b === NO_PROJECT) || a.localeCompare(b, "zh-CN"));
+    const single = names.length === 1 && names[0] === NO_PROJECT;
+    list.innerHTML = names.map((project) =>
+    {
+      const items = projects.get(project);
+      const key = "p:" + project;
+      const hasActive = items.some((item) => item.id === tests.scriptId);
+      const open = single || term || !tests.collapsed.has(key);
+      const cases = items.reduce((sum, item) => sum + (item.cases || 0), 0);
+      const body = items.map((item) =>
+      {
+        const meta = item.error
+          ? `<small class="danger-text">${esc(item.error.split("\n")[0])}</small>`
+          : `<small>${item.cases} 个用例${item.operator_cases ? ` · ${item.operator_cases} 个需操作员` : ""}</small>`;
+        return `<button type="button" class="tests-script ${item.id === tests.scriptId ? "active" : ""}" data-script="${esc(item.id)}" title="${esc(item.source || item.id)}" ${item.error ? "disabled" : ""}>`
+          + `<strong>${esc(item.title || item.id)}</strong><span class="chip ${item.builtin ? "" : "info"}">${item.builtin ? "内置" : "已上传"}</span>${meta}</button>`;
+      }).join("");
+      if (single) return body;
+      return `<div class="tests-project ${open ? "open" : ""}">`
+        + `<button type="button" class="tests-fold" data-project="${esc(project)}" aria-expanded="${open}">`
+        + `<span class="tests-fold-mark" aria-hidden="true"></span><strong>${esc(project)}</strong>`
+        + `<small>${items.length} 个脚本 · ${cases} 个用例${hasActive && !open ? " · 含当前脚本" : ""}</small></button>`
+        + (open ? `<div class="tests-project-body">${body}</div>` : "") + "</div>";
     }).join("");
   }
 
@@ -190,12 +283,13 @@
     const term = $t("tests-case-filter").value.trim().toLowerCase();
     const verdicts = caseVerdicts();
     const currentCase = tests.status?.active ? tests.status.current?.case_id : null;
-    const items = script.cases.filter((c) => !term || `${c.number} ${c.title} ${c.notes || ""}`.toLowerCase().includes(term));
-    list.innerHTML = items.map((c) =>
+    const groups = caseGroups(script.cases);
+    const items = script.cases.filter((c) => !term || `${c.number} ${c.title} ${c.notes || ""} ${c.group || ""}`.toLowerCase().includes(term));
+    const renderCase = (c) =>
     {
       const flags = c.flags || {};
       const badges = [
-        flags.operator ? '<span class="chip warn">需要操作旋钮</span>' : "",
+        flags.operator ? '<span class="chip warn">需要操作员</span>' : "",
         flags.confirm ? '<span class="chip">人工确认</span>' : "",
         flags.timing ? '<span class="chip info">时序敏感</span>' : "",
       ].join("");
@@ -206,7 +300,43 @@
         + `<div class="tests-case-main"><strong>${esc(c.number)}</strong><span>${esc(c.title)}</span>${badges ? `<div class="tests-case-badges">${badges}</div>` : ""}</div>`
         + (verdict ? chip(VERDICTS, verdict) : "<span></span>")
         + `<details><summary>${c.steps.length} 个步骤${c.notes ? " · " + esc(c.notes) : ""}</summary><ol>${steps}</ol></details></div>`;
+    };
+    const collapseAll = $t("tests-collapse-groups");
+    collapseAll.hidden = !groups;
+    if (!groups)
+    {
+      list.innerHTML = items.map(renderCase).join("") || '<p class="muted">没有匹配的用例。</p>';
+      updateSelectionCount();
+      return;
+    }
+    const allClosed = [...groups.keys()].every((name) => tests.collapsed.has(groupKey(name)));
+    collapseAll.textContent = allClosed ? "全部展开" : "全部折叠";
+    const shown = new Set(items.map((c) => c.id));
+    list.innerHTML = [...groups.entries()].map(([name, all]) =>
+    {
+      const visibleCases = all.filter((c) => shown.has(c.id));
+      if (!visibleCases.length) return "";
+      // A filter or the running case keeps its group open.
+      const open = Boolean(term) || all.some((c) => c.id === currentCase) || !tests.collapsed.has(groupKey(name));
+      const chosen = all.filter((c) => tests.selected.has(c.id)).length;
+      const counts = {};
+      for (const c of all)
+      {
+        const verdict = verdicts.get(c.id);
+        if (verdict) counts[verdict] = (counts[verdict] || 0) + 1;
+      }
+      const state = chosen === 0 ? "" : chosen === all.length ? "checked" : "data-partial";
+      return `<section class="tests-group ${open ? "open" : ""}">`
+        + `<div class="tests-group-head">`
+        + `<input type="checkbox" data-group-check="${esc(name)}" aria-label="选择分组 ${esc(name)}" ${state}>`
+        + `<button type="button" class="tests-fold" data-group="${esc(name)}" aria-expanded="${open}">`
+        + `<span class="tests-fold-mark" aria-hidden="true"></span><strong>${esc(name)}</strong>`
+        + `<small>已选 ${chosen} / ${all.length}${term ? ` · 匹配 ${visibleCases.length}` : ""}</small></button>`
+        + `<div class="tests-summary">${summaryChips(counts)}</div></div>`
+        + (open ? `<div class="tests-group-body">${visibleCases.map(renderCase).join("")}</div>` : "")
+        + "</section>";
     }).join("") || '<p class="muted">没有匹配的用例。</p>';
+    list.querySelectorAll("[data-partial]").forEach((box) => { box.indeterminate = true; });
     updateSelectionCount();
   }
 
@@ -239,7 +369,7 @@
     }
     const chosen = script.cases.filter((c) => tests.selected.has(c.id));
     const knob = chosen.filter((c) => c.flags?.operator).length;
-    $t("tests-selection-count").textContent = `已选 ${chosen.length} / ${script.cases.length} 个用例` + (knob ? `，其中 ${knob} 个需要操作旋钮` : "");
+    $t("tests-selection-count").textContent = `已选 ${chosen.length} / ${script.cases.length} 个用例` + (knob ? `，其中 ${knob} 个需要操作员` : "");
     $t("tests-start").disabled = active || !chosen.length || !$t("tests-device").value;
   }
 
@@ -271,8 +401,14 @@
     const device = tests.devices.find((d) => d.id === $t("tests-device").value);
     const select = $t("tests-endpoint");
     const previous = select.value;
-    const endpoints = Object.entries(device?.endpoints || {}).filter(([, ep]) => (ep.inClusters || []).includes(6));
-    select.innerHTML = endpoints.map(([ep, info]) => `<option value="${esc(ep)}">端点 ${esc(ep)} · ${esc(info.type || "")}${(info.inClusters || []).includes(8) ? "" : "（无调光簇）"}</option>`).join("") || '<option value="">无</option>';
+    const endpoints = Object.entries(device?.endpoints || {});
+    const hint = (info) =>
+    {
+      const clusters = info.inClusters || [];
+      if (!clusters.includes(6)) return "（无开关簇）";
+      return clusters.includes(8) ? "" : "（无调光簇）";
+    };
+    select.innerHTML = endpoints.map(([ep, info]) => `<option value="${esc(ep)}">端点 ${esc(ep)} · ${esc(info.type || "")}${hint(info)}</option>`).join("") || '<option value="">无</option>';
     const scriptEndpoint = String(tests.script?.endpoint ?? "");
     if (endpoints.some(([ep]) => ep === previous)) select.value = previous;
     else if (endpoints.some(([ep]) => ep === scriptEndpoint)) select.value = scriptEndpoint;
@@ -427,7 +563,7 @@
     const knob = script.cases.filter((c) => tests.selected.has(c.id) && c.flags?.operator).length;
     const manual = $t("tests-opt-manual").checked;
     const text = `在 ${device.name || device.model || device.eui64} 上运行 ${cases.length} 个用例？\n\n`
-      + (knob ? `其中 ${knob} 个用例需要现场操作旋钮。\n` : "")
+      + (knob ? `其中 ${knob} 个用例需要操作员现场操作（旋钮、按键、外部开关等）。\n` : "")
       + (manual ? "灯光变化需要人工确认。\n" : "已关闭人工确认，只检查上报属性。\n")
       + "测试期间该设备被测试独占，其他设备的自动发现会暂停。";
     if (!window.confirm(text)) return;
@@ -524,17 +660,62 @@
 
   $t("tests-script-list").addEventListener("click", (event) =>
   {
+    const fold = event.target.closest("[data-project]");
+    if (fold)
+    {
+      const key = "p:" + fold.dataset.project;
+      setCollapsed(key, !tests.collapsed.has(key));
+      renderScripts();
+      return;
+    }
     const button = event.target.closest("[data-script]");
     if (button) selectScript(button.dataset.script).catch((err) => toast(err.message));
   });
+  $t("tests-case-list").addEventListener("click", (event) =>
+  {
+    const fold = event.target.closest("[data-group]");
+    if (!fold) return;
+    const key = groupKey(fold.dataset.group);
+    setCollapsed(key, !tests.collapsed.has(key));
+    renderCases();
+  });
   $t("tests-case-list").addEventListener("change", (event) =>
   {
+    const group = event.target.closest("[data-group-check]");
+    if (group && tests.script)
+    {
+      const name = group.dataset.groupCheck;
+      for (const c of tests.script.cases)
+      {
+        if ((c.group || NO_GROUP) !== name) continue;
+        if (group.checked) tests.selected.add(c.id);
+        else tests.selected.delete(c.id);
+      }
+      renderCases();
+      return;
+    }
     const box = event.target.closest("[data-case-check]");
     if (!box) return;
     if (box.checked) tests.selected.add(box.dataset.caseCheck);
     else tests.selected.delete(box.dataset.caseCheck);
-    updateSelectionCount();
+    if (caseGroups(tests.script?.cases || []))
+    {
+      renderCases();  // refresh the group's "已选" count and checkbox
+    }
+    else
+    {
+      updateSelectionCount();
+    }
   });
+  $t("tests-collapse-groups").addEventListener("click", () =>
+  {
+    const groups = caseGroups(tests.script?.cases || []);
+    if (!groups) return;
+    const close = ![...groups.keys()].every((name) => tests.collapsed.has(groupKey(name)));
+    for (const name of groups.keys()) setCollapsed(groupKey(name), close);
+    renderCases();
+  });
+  $t("tests-script-filter").addEventListener("input", renderScripts);
   $t("tests-prompt").addEventListener("click", (event) =>
   {
     const button = event.target.closest("[data-respond]");

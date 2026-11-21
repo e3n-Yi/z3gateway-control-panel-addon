@@ -17,7 +17,7 @@
         <div class="status-pill" id="run-pill">STOPPED</div>
         <p id="status-line">未连接</p>
       </div>
-      <span class="preview-badge">0.3.4 · 自动测试</span>
+      <span class="preview-badge">0.3.5 · 自动测试</span>
     </header>
     <nav class="workspace-nav" aria-label="工作区">
       <div role="tablist">
@@ -104,6 +104,7 @@
               <input id="tests-upload-input" class="ota-file-input" type="file" accept=".json,application/json" />
             </div>
           </div>
+          <input id="tests-script-filter" class="compact-input tests-script-filter" placeholder="筛选项目或脚本" aria-label="筛选脚本" />
           <div id="tests-script-list" class="tests-script-list"><p class="muted">加载中…</p></div>
         </section>
         <section class="panel tests-cases" aria-labelledby="tests-script-title">
@@ -113,9 +114,10 @@
               <p id="tests-script-meta" class="muted">选择左侧脚本</p>
             </div>
             <div class="toolbar">
-              <input id="tests-case-filter" class="compact-input" placeholder="筛选编号或标题" aria-label="筛选用例" />
+              <input id="tests-case-filter" class="compact-input" placeholder="筛选编号、标题或分组" aria-label="筛选用例" />
+              <button id="tests-collapse-groups" class="ghost" type="button" hidden>全部折叠</button>
               <button id="tests-select-all" class="ghost" type="button">全选</button>
-              <button id="tests-select-auto" class="ghost" type="button">仅无需旋钮</button>
+              <button id="tests-select-auto" class="ghost" type="button" title="只选不需要操作员现场操作的用例">仅自动</button>
               <button id="tests-select-none" class="ghost" type="button">清空</button>
             </div>
           </div>

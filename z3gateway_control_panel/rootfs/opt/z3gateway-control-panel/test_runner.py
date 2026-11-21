@@ -61,15 +61,36 @@ ATTRIBUTES: dict[str, tuple[int, int, int]] = {
     "startUpCurrentLevel": (CLUSTER_LEVEL, 0x4000, 0x20),
 }
 ATTRIBUTE_BY_ID = {(cluster, attr): name for name, (cluster, attr, _) in ATTRIBUTES.items()}
-TYPE_SIZES = {0x10: 1, 0x18: 1, 0x19: 2, 0x20: 1, 0x21: 2, 0x22: 3, 0x23: 4, 0x30: 1, 0x31: 2}
+# Writable/reportable fixed-size types: bool, data8..64, map8..64, uint8..64, int8..64, enum8/16.
+TYPE_SIZES = {0x10: 1, 0x30: 1, 0x31: 2}
+TYPE_SIZES.update({t: t - 0x07 for t in range(0x08, 0x10)})
+TYPE_SIZES.update({t: t - 0x17 for t in range(0x18, 0x20)})
+TYPE_SIZES.update({t: t - 0x1F for t in range(0x20, 0x28)})
+TYPE_SIZES.update({t: t - 0x27 for t in range(0x28, 0x30)})
+SIGNED_TYPES = set(range(0x28, 0x30))
+ATTR_REF_RE = re.compile(r"^0[xX]([0-9A-Fa-f]{1,4}):0[xX]([0-9A-Fa-f]{1,4})$")
+ATTR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,47}$")
 DEFAULT_REPORTING = [
     {"attribute": "onOff", "min": 0, "max": 3600},
     {"attribute": "currentLevel", "min": 1, "max": 3600, "change": 1},
 ]
+ZCL_STATUS_NAMES = {
+    0x00: "SUCCESS", 0x01: "FAILURE", 0x7E: "NOT_AUTHORIZED", 0x80: "MALFORMED_COMMAND",
+    0x81: "UNSUP_CLUSTER_COMMAND", 0x82: "UNSUP_GENERAL_COMMAND", 0x83: "UNSUP_MANUF_CLUSTER_COMMAND",
+    0x84: "UNSUP_MANUF_GENERAL_COMMAND", 0x85: "INVALID_FIELD", 0x86: "UNSUPPORTED_ATTRIBUTE",
+    0x87: "INVALID_VALUE", 0x88: "READ_ONLY", 0x89: "INSUFFICIENT_SPACE", 0x8A: "DUPLICATE_EXISTS",
+    0x8B: "NOT_FOUND", 0x8C: "UNREPORTABLE_ATTRIBUTE", 0x8D: "INVALID_DATA_TYPE", 0x8E: "INVALID_SELECTOR",
+    0x8F: "WRITE_ONLY", 0x90: "INCONSISTENT_STARTUP_STATE", 0x91: "DEFINED_OUT_OF_BAND",
+    0xC3: "UNSUPPORTED_CLUSTER",
+}
+ZCL_STATUS_BY_NAME = {name: code for code, name in ZCL_STATUS_NAMES.items()}
+RESPONSE_TIMEOUT_RANGE_MS = (500, 60000)
 
 STEP_TYPES = {"write_attributes", "read", "set_state", "command", "burst", "expect", "wait", "operator", "confirm"}
 MATCHER_KINDS = {"first_value", "final_value", "contains_value", "monotonic", "duration", "no_report",
-                 "in_range", "count", "default_response", "read_value", "report_matches_read"}
+                 "in_range", "count", "default_response", "read_value", "report_matches_read", "command_received"}
+# Matchers that look at frames, not at an attribute.
+FRAME_MATCHERS = {"default_response", "command_received"}
 VERDICT_RANK = {"error": 5, "fail": 4, "inconclusive": 3, "skipped": 2, "pass": 1}
 VERDICT_LABELS = {"pass": "通过", "fail": "不通过", "inconclusive": "无法判定", "error": "错误",
                   "skipped": "已跳过", "not-run": "未运行", "aborted": "已中止", "running": "运行中",
@@ -110,33 +131,214 @@ def as_int(value: Any, name: str = "value") -> int:
         raise ScriptError(f"{name} 不是整数: {value!r}") from exc
 
 
+def literal_attribute(cluster: int, attribute: int) -> str:
+    return f"0x{cluster:04X}:0x{attribute:04X}"
+
+
+class AttributeTable:
+    """Attribute names a script may use: the built-in OnOff/Level table, the
+    script's own declarations (top-level "attributes") and literal
+    "0xCCCC:0xAAAA" references. Every reference resolves to one canonical name,
+    which is also the name observations of that attribute carry."""
+
+    def __init__(self, declared: dict[str, tuple[int, int, int]] | None = None) -> None:
+        self.specs: dict[str, tuple[int, int, int | None]] = dict(ATTRIBUTES)
+        self.by_id: dict[tuple[int, int], str] = dict(ATTRIBUTE_BY_ID)
+        for name, spec in (declared or {}).items():
+            self.specs[name] = spec
+            self.by_id[(spec[0], spec[1])] = name
+
+    @classmethod
+    def from_script(cls, script: Any, errors: list[str] | None = None) -> "AttributeTable":
+        errors = [] if errors is None else errors
+        declared: dict[str, tuple[int, int, int]] = {}
+        raw = script.get("attributes", {}) if isinstance(script, dict) else {}
+        if not isinstance(raw, dict):
+            errors.append("attributes 必须是对象：名字 → {cluster, id, type}")
+            raw = {}
+        seen_ids: dict[tuple[int, int], str] = {}
+        for name, spec in raw.items():
+            where = f"attributes.{name}"
+            if not ATTR_NAME_RE.fullmatch(str(name)):
+                errors.append(f"{where}: 名字只能是字母、数字、下划线，且不以数字开头")
+                continue
+            if name in ATTRIBUTES:
+                errors.append(f"{where}: 与内置属性重名")
+                continue
+            if not isinstance(spec, dict):
+                errors.append(f"{where}: 必须是 {{cluster, id, type}} 对象")
+                continue
+            try:
+                key = (ranged(spec, "cluster", 0xFFFF), ranged(spec, "id", 0xFFFF))
+                data_type = ranged(spec, "type", 0xFF)
+            except ScriptError as exc:
+                errors.append(f"{where}: {exc}")
+                continue
+            if key in ATTRIBUTE_BY_ID or key in seen_ids:
+                errors.append(f"{where}: {literal_attribute(*key)} 已有名字 "
+                              f"{ATTRIBUTE_BY_ID.get(key) or seen_ids.get(key)}")
+                continue
+            seen_ids[key] = name
+            declared[name] = (key[0], key[1], data_type)
+        return cls(declared)
+
+    def resolve(self, ref: Any) -> str | None:
+        if not isinstance(ref, str):
+            return None
+        if ref in self.specs:
+            return ref
+        match = ATTR_REF_RE.fullmatch(ref.strip())
+        if not match:
+            return None
+        key = (int(match.group(1), 16), int(match.group(2), 16))
+        return self.by_id.get(key, literal_attribute(*key))
+
+    def spec(self, name: str) -> tuple[int, int, int | None]:
+        if name in self.specs:
+            return self.specs[name]
+        match = ATTR_REF_RE.fullmatch(name)
+        if not match:
+            raise ScriptError(f"未知属性 {name!r}")
+        return int(match.group(1), 16), int(match.group(2), 16), None
+
+    def type_of(self, name: str) -> int | None:
+        try:
+            return self.spec(name)[2]
+        except ScriptError:
+            return None
+
+    def name_of(self, cluster: int, attribute: int) -> str:
+        return self.by_id.get((cluster, attribute), literal_attribute(cluster, attribute))
+
+    def norm(self, name: str, value: Any) -> Any:
+        if self.type_of(name) == 0x10:
+            if isinstance(value, str):
+                return 1 if value.strip().lower() in {"on", "true", "1"} else 0
+            return 1 if value else 0
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str) and not re.fullmatch(r"\s*-?(0[xX][0-9A-Fa-f]+|\d+)\s*", value):
+            return value  # string attributes compare as text
+        return as_int(value, name)
+
+    def display(self, name: str, value: Any) -> str:
+        if self.type_of(name) == 0x10 and value in (0, 1):
+            return "ON" if value else "OFF"
+        return str(value)
+
+
+BUILTIN_ATTRIBUTES = AttributeTable()
+
+
 def norm_value(attribute: str, value: Any) -> Any:
-    if ATTRIBUTES.get(attribute, (0, 0, 0))[2] == 0x10:
-        if isinstance(value, str):
-            return 1 if value.strip().lower() in {"on", "true", "1"} else 0
-        return 1 if value else 0
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return value
-    return as_int(value, attribute)
+    return BUILTIN_ATTRIBUTES.norm(attribute, value)
 
 
 def display_value(attribute: str, value: Any) -> str:
-    if ATTRIBUTES.get(attribute, (0, 0, 0))[2] == 0x10 and value in (0, 1):
-        return "ON" if value else "OFF"
-    return str(value)
+    return BUILTIN_ATTRIBUTES.display(attribute, value)
 
 
 def attribute_name(cluster: int, attribute: int) -> str:
-    return ATTRIBUTE_BY_ID.get((cluster, attribute), f"0x{cluster:04X}:0x{attribute:04X}")
+    return BUILTIN_ATTRIBUTES.name_of(cluster, attribute)
 
 
 def hex_value(data_type: int, value: int) -> str:
     size = TYPE_SIZES.get(data_type)
     if size is None:
         raise ScriptError(f"不支持写入类型 0x{data_type:02X}")
-    if not 0 <= value < (1 << (8 * size)):
+    signed = data_type in SIGNED_TYPES
+    low, high = (-(1 << (8 * size - 1)), 1 << (8 * size - 1)) if signed else (0, 1 << (8 * size))
+    if not low <= value < high:
         raise ScriptError(f"取值 {value} 超出类型 0x{data_type:02X} 范围")
-    return "{" + " ".join(f"{b:02X}" for b in value.to_bytes(size, "little")) + "}"
+    return "{" + " ".join(f"{b:02X}" for b in value.to_bytes(size, "little", signed=signed)) + "}"
+
+
+def parse_status(value: Any, name: str = "expect_status") -> int:
+    """A ZCL status as a number, "0x87" or a name such as "INVALID_VALUE"."""
+    if isinstance(value, str) and value.strip().upper() in ZCL_STATUS_BY_NAME:
+        return ZCL_STATUS_BY_NAME[value.strip().upper()]
+    status = as_int(value, name)
+    if not 0 <= status <= 0xFF:
+        raise ScriptError(f"{name} 超出范围 0..0xFF")
+    return status
+
+
+def status_text(status: int | None) -> str:
+    if status is None:
+        return "无"
+    name = ZCL_STATUS_NAMES.get(status)
+    return f"0x{status:02X}" + (f" {name}" if name else "")
+
+
+def bind_clusters(setup: dict[str, Any]) -> list[int]:
+    """setup.bind: true = OnOff + Level (the original meaning), false = none,
+    or a list of clusters / {"clusters": [...]}."""
+    bind = setup.get("bind", True)
+    if bind is True:
+        return [CLUSTER_ON_OFF, CLUSTER_LEVEL]
+    if bind is False or bind is None:
+        return []
+    if isinstance(bind, dict):
+        bind = bind.get("clusters")
+    if not isinstance(bind, list):
+        raise ScriptError("setup.bind 必须是 true/false、簇列表或 {\"clusters\": [...]}")
+    clusters = []
+    for item in bind:
+        cluster = as_int(item, "setup.bind")
+        if not 0 <= cluster <= 0xFFFF:
+            raise ScriptError(f"setup.bind 簇 {item!r} 超出范围")
+        if cluster not in clusters:
+            clusters.append(cluster)
+    return clusters
+
+
+def reporting_items(setup: dict[str, Any]) -> list[Any]:
+    """setup.reporting, or the defaults for the bound clusters when omitted."""
+    if "reporting" in setup:
+        return setup["reporting"]
+    if isinstance(setup.get("bind", True), bool):
+        return DEFAULT_REPORTING
+    clusters = bind_clusters(setup)
+    return [item for item in DEFAULT_REPORTING if ATTRIBUTES[item["attribute"]][0] in clusters]
+
+
+def write_items(step: dict[str, Any], table: AttributeTable) -> list[dict[str, Any]]:
+    """Flatten write_attributes into (cluster, id, type, value, label, name, expect_status)."""
+    default = step.get("expect_status")
+    items = []
+    for ref, raw_value in (step.get("attributes") or {}).items():
+        name = table.resolve(ref)
+        if name is None:
+            raise ScriptError(f"未知属性 {ref!r}")
+        cluster, attribute, data_type = table.spec(name)
+        if data_type is None:
+            raise ScriptError(f"{ref} 没有声明类型：在顶层 attributes 里声明，或改用 raw 写入")
+        expected = default
+        if isinstance(raw_value, dict):
+            if "value" not in raw_value:
+                raise ScriptError(f"{ref}: 对象写法需要 value")
+            expected = raw_value.get("expect_status", default)
+            raw_value = raw_value["value"]
+        try:
+            value = table.norm(name, raw_value)
+            if not isinstance(value, int):
+                raise ScriptError("只能写整数类属性")
+            hex_value(data_type, value)
+        except ScriptError as exc:
+            raise ScriptError(f"{ref}: {exc}") from exc
+        items.append({"cluster": cluster, "id": attribute, "type": data_type, "value": value, "label": name,
+                      "name": name, "expect_status": None if expected is None else parse_status(expected)})
+    for item in step.get("raw") or []:
+        if not isinstance(item, dict):
+            raise ScriptError("raw 项必须是对象")
+        cluster, attribute = ranged(item, "cluster", 0xFFFF), ranged(item, "id", 0xFFFF)
+        data_type, value = ranged(item, "type", 255), as_int(item.get("value"), "value")
+        hex_value(data_type, value)
+        expected = item.get("expect_status", default)
+        items.append({"cluster": cluster, "id": attribute, "type": data_type, "value": value,
+                      "label": literal_attribute(cluster, attribute), "name": table.name_of(cluster, attribute),
+                      "expect_status": None if expected is None else parse_status(expected)})
+    return items
 
 
 def move_mode(value: Any) -> int:
@@ -220,7 +422,14 @@ def build_command(params: dict[str, Any], next_seq: Callable[[], int]) -> tuple[
     raise ScriptError(f"未知命令 {name!r}")
 
 
-def _validate_matcher(matcher: Any, where: str, errors: list[str]) -> None:
+def hex_bytes(value: Any, name: str = "payload") -> str:
+    text = re.sub(r"[\s{}]", "", str(value or "")).upper()
+    if not re.fullmatch(r"(?:[0-9A-F]{2})*", text):
+        raise ScriptError(f"{name} 必须是十六进制字节")
+    return text
+
+
+def _validate_matcher(matcher: Any, where: str, errors: list[str], table: AttributeTable = BUILTIN_ATTRIBUTES) -> None:
     if not isinstance(matcher, dict):
         errors.append(f"{where}: matcher 必须是对象")
         return
@@ -229,23 +438,44 @@ def _validate_matcher(matcher: Any, where: str, errors: list[str]) -> None:
         errors.append(f"{where}: 未知 matcher {kind!r}")
         return
     attribute = matcher.get("attribute", "currentLevel")
-    if kind != "default_response" and attribute not in ATTRIBUTES:
+    if kind not in FRAME_MATCHERS and table.resolve(attribute) is None:
         errors.append(f"{where}: 未知属性 {attribute!r}")
     if matcher.get("severity", "required") not in {"required", "info"}:
         errors.append(f"{where}: severity 只能是 required/info")
     needs = {"first_value": ["value"], "final_value": ["value"], "contains_value": ["value"],
-             "read_value": ["value"], "duration": ["ms"], "monotonic": ["direction"]}
+             "read_value": ["value"], "duration": ["ms"], "monotonic": ["direction"], "command_received": ["cluster"]}
     for key in needs.get(kind, []):
         if key not in matcher:
             errors.append(f"{where}: {kind} 缺少 {key}")
     if kind == "monotonic" and matcher.get("direction") not in {"up", "down"}:
         errors.append(f"{where}: direction 只能是 up/down")
-    for key in ("tolerance", "ms", "tolerance_ms", "tolerance_pct", "within_ms", "min", "max", "status"):
+    for key in ("tolerance", "ms", "tolerance_ms", "tolerance_pct", "within_ms", "min", "max", "count"):
         if key in matcher:
             try:
                 as_int(matcher[key], key) if key != "tolerance_pct" else float(matcher[key])
             except (ScriptError, ValueError, TypeError):
                 errors.append(f"{where}: {key} 不是数字")
+    if "status" in matcher:
+        try:
+            parse_status(matcher["status"], "status")
+        except ScriptError as exc:
+            errors.append(f"{where}: {exc}")
+    if kind == "command_received":
+        try:
+            if "cluster" in matcher:
+                ranged(matcher, "cluster", 0xFFFF)
+            if "command_id" in matcher:
+                ranged(matcher, "command_id", 0xFF)
+            hex_bytes(matcher.get("payload"))
+            endpoint = matcher.get("src_endpoint", "target")
+            if endpoint not in {"target", "any"} and not 1 <= as_int(endpoint, "src_endpoint") <= 240:
+                errors.append(f"{where}: src_endpoint 必须是 1..240、\"target\" 或 \"any\"")
+        except ScriptError as exc:
+            errors.append(f"{where}: {exc}")
+        if matcher.get("direction", "any") not in {"any", "server_to_client", "client_to_server"}:
+            errors.append(f"{where}: direction 只能是 any/server_to_client/client_to_server")
+        if "count" in matcher and ("min" in matcher or "max" in matcher):
+            errors.append(f"{where}: count 与 min/max 只能二选一")
 
 
 def _validate_command(params: Any, where: str, errors: list[str]) -> None:
@@ -258,7 +488,7 @@ def _validate_command(params: Any, where: str, errors: list[str]) -> None:
         errors.append(f"{where}: {exc}")
 
 
-def validate_step(step: Any, where: str, errors: list[str]) -> None:
+def validate_step(step: Any, where: str, errors: list[str], table: AttributeTable = BUILTIN_ATTRIBUTES) -> None:
     if not isinstance(step, dict):
         errors.append(f"{where}: 步骤必须是对象")
         return
@@ -271,40 +501,44 @@ def validate_step(step: Any, where: str, errors: list[str]) -> None:
         if not isinstance(attributes, dict) or not isinstance(raw, list) or not (attributes or raw):
             errors.append(f"{where}: write_attributes 需要 attributes 或 raw")
             return
-        for name, value in attributes.items():
-            if name not in ATTRIBUTES:
-                errors.append(f"{where}: 未知属性 {name!r}")
-                continue
-            try:
-                hex_value(ATTRIBUTES[name][2], norm_value(name, value))
-            except ScriptError as exc:
-                errors.append(f"{where}: {name}: {exc}")
-        for index, item in enumerate(raw):
-            try:
-                ranged(item, "cluster", 0xFFFF), ranged(item, "id", 0xFFFF)
-                hex_value(ranged(item, "type", 255), as_int(item.get("value"), "value"))
-            except (ScriptError, AttributeError, TypeError) as exc:
-                errors.append(f"{where}.raw[{index}]: {exc}")
+        try:
+            items = write_items(step, table)
+        except (ScriptError, AttributeError, TypeError) as exc:
+            errors.append(f"{where}: {exc}")
+            return
+        if step.get("verify", True) is False and any(item["expect_status"] is not None for item in items):
+            errors.append(f"{where}: verify=false 时不能写 expect_status（不等 Write Response 就无法比较状态）")
     elif kind == "read":
         names = step.get("attributes")
         if not isinstance(names, list) or not names:
             errors.append(f"{where}: read 需要 attributes 列表")
             return
+        resolved = set()
         for name in names:
-            if name not in ATTRIBUTES:
+            canonical = table.resolve(name)
+            if canonical is None:
                 errors.append(f"{where}: 未知属性 {name!r}")
+            resolved.add(canonical)
         for name in (step.get("expect") or {}):
-            if name not in names:
+            if table.resolve(name) not in resolved:
                 errors.append(f"{where}: expect 中的 {name!r} 未读取")
     elif kind == "set_state":
         if not isinstance(step.get("on"), bool):
             errors.append(f"{where}: set_state.on 必须是 true/false")
-        try:
-            level = as_int(step.get("level"), "level")
-            if not 1 <= level <= 254:
-                errors.append(f"{where}: set_state.level 必须在 1..254")
-        except ScriptError as exc:
-            errors.append(f"{where}: {exc}")
+        if step.get("level") is not None:
+            try:
+                level = as_int(step.get("level"), "level")
+                if not 1 <= level <= 254:
+                    errors.append(f"{where}: set_state.level 必须在 1..254")
+            except ScriptError as exc:
+                errors.append(f"{where}: {exc}")
+        for key in ("settle_quiet_ms", "settle_max_ms", "settle_min_ms"):
+            if key in step:
+                try:
+                    if as_int(step[key], key) < 0:
+                        errors.append(f"{where}: {key} 不能为负")
+                except ScriptError as exc:
+                    errors.append(f"{where}: {exc}")
     elif kind == "command":
         _validate_command(step, where, errors)
     elif kind == "burst":
@@ -329,9 +563,9 @@ def validate_step(step: Any, where: str, errors: list[str]) -> None:
             errors.append(f"{where}: expect 需要 matchers 列表")
         else:
             for index, matcher in enumerate(matchers):
-                _validate_matcher(matcher, f"{where}.matchers[{index}]", errors)
+                _validate_matcher(matcher, f"{where}.matchers[{index}]", errors, table)
         for name in step.get("read_back") or []:
-            if name not in ATTRIBUTES:
+            if table.resolve(name) is None:
                 errors.append(f"{where}: read_back 未知属性 {name!r}")
         for key in ("window_ms", "min_ms"):
             if key in step:
@@ -345,6 +579,40 @@ def validate_step(step: Any, where: str, errors: list[str]) -> None:
     elif kind in {"operator", "confirm"}:
         if not isinstance(step.get("prompt"), str) or not step["prompt"].strip():
             errors.append(f"{where}: {kind} 需要 prompt 文本")
+        if kind == "operator" and step.get("anchor", "prompt") not in {"prompt", "continue"}:
+            errors.append(f"{where}: operator.anchor 只能是 prompt/continue")
+
+
+def _validate_setup(setup: Any, table: AttributeTable, errors: list[str]) -> None:
+    if not isinstance(setup, dict):
+        errors.append("setup 必须是对象")
+        return
+    try:
+        bind_clusters(setup)
+    except ScriptError as exc:
+        errors.append(str(exc))
+        return
+    items = reporting_items(setup)
+    if not isinstance(items, list):
+        errors.append("setup.reporting 必须是列表")
+        return
+    for index, item in enumerate(items):
+        where = f"setup.reporting[{index}]"
+        name = table.resolve(item.get("attribute")) if isinstance(item, dict) else None
+        if name is None:
+            errors.append(f"{where}: 未知属性")
+            continue
+        try:
+            data_type = ranged(item, "type", 0xFF) if "type" in item else table.type_of(name)
+            if data_type is None:
+                errors.append(f"{where}: {name} 没有类型：写 type，或在顶层 attributes 里声明")
+                continue
+            for key in ("min", "max"):
+                ranged(item, key, 0xFFFF, 0)
+            if data_type != 0x10:
+                hex_value(data_type, as_int(item.get("change", 0), "change"))
+        except ScriptError as exc:
+            errors.append(f"{where}: {exc}")
 
 
 def validate_script(script: Any) -> list[str]:
@@ -355,13 +623,19 @@ def validate_script(script: Any) -> list[str]:
         errors.append(f"format 必须是 {SCRIPT_FORMAT!r}")
     if not isinstance(script.get("id"), str) or not ID_RE.fullmatch(script["id"]):
         errors.append("id 必须是 1-64 个字母、数字、点、下划线或连字符")
-    setup = script.get("setup", {})
-    if not isinstance(setup, dict):
-        errors.append("setup 必须是对象")
-    else:
-        for index, item in enumerate(setup.get("reporting", DEFAULT_REPORTING)):
-            if not isinstance(item, dict) or item.get("attribute") not in ATTRIBUTES:
-                errors.append(f"setup.reporting[{index}]: 未知属性")
+    for key in ("project", "title", "source", "description"):
+        if key in script and not isinstance(script[key], str):
+            errors.append(f"{key} 必须是文本")
+    if "response_timeout_ms" in script:
+        try:
+            timeout = as_int(script["response_timeout_ms"], "response_timeout_ms")
+            low, high = RESPONSE_TIMEOUT_RANGE_MS
+            if not low <= timeout <= high:
+                errors.append(f"response_timeout_ms 必须在 {low}..{high}")
+        except ScriptError as exc:
+            errors.append(str(exc))
+    table = AttributeTable.from_script(script, errors)
+    _validate_setup(script.get("setup", {}), table, errors)
     cases = script.get("cases")
     if not isinstance(cases, list) or not cases:
         errors.append("cases 必须是非空列表")
@@ -379,13 +653,21 @@ def validate_script(script: Any) -> list[str]:
             errors.append(f"{where}: id {case_id!r} 重复")
         else:
             seen.add(case_id)
+        if "group" in case and not isinstance(case["group"], str):
+            errors.append(f"{where}: group 必须是文本")
         steps = case.get("steps")
         if not isinstance(steps, list) or not steps:
             errors.append(f"{where}: steps 必须是非空列表")
             continue
         for step_index, step in enumerate(steps):
-            validate_step(step, f"{where}.steps[{step_index}]", errors)
+            validate_step(step, f"{where}.steps[{step_index}]", errors, table)
     return errors
+
+
+def case_group(case: dict[str, Any]) -> str | None:
+    """The heading a case is listed under: "group", else the customer sheet name."""
+    group = case.get("group") or case.get("sheet")
+    return str(group) if group else None
 
 
 def case_flags(case: dict[str, Any]) -> dict[str, bool]:
@@ -440,6 +722,7 @@ class ScriptStore:
                 flags = [case_flags(case) for case in script["cases"]]
                 items.append({
                     "id": script["id"], "title": script.get("title") or script["id"],
+                    "project": script.get("project", ""),
                     "source": script.get("source", ""), "description": script.get("description", ""),
                     "cases": len(script["cases"]), "operator_cases": sum(f["operator"] for f in flags),
                     "confirm_cases": sum(f["confirm"] for f in flags), "builtin": builtin,
@@ -468,6 +751,7 @@ class ScriptStore:
         script["builtin"] = builtin
         for case in script["cases"]:
             case["flags"] = case_flags(case)
+            case["group"] = case_group(case)
         return script
 
     def save(self, text: str, *, overwrite: bool = False) -> dict[str, Any]:
@@ -566,21 +850,27 @@ def evaluate_matcher(matcher: dict[str, Any], observations: list[dict[str, Any]]
                      context: dict[str, Any] | None = None) -> dict[str, Any]:
     """Evaluate one matcher against observations (t in ms relative to the anchor)."""
     context = context or {}
+    table: AttributeTable = context.get("attributes") or BUILTIN_ATTRIBUTES
     kind = matcher["kind"]
     attribute = matcher.get("attribute", "currentLevel")
+    attribute = table.resolve(attribute) or attribute
     severity = matcher.get("severity", "required")
     tolerance = as_int(matcher.get("tolerance", 0), "tolerance")
     reports = [o for o in observations if o["attribute"] == attribute and o["source"] == "report"]
     reads = [o for o in observations if o["attribute"] == attribute and o["source"] == "read"]
     values = [o["value"] for o in reports]
+    display_value = table.display  # noqa: F811 - per-script attribute table
     shown = lambda items: ", ".join(display_value(attribute, v) for v in items) or "无"  # noqa: E731
     result: dict[str, Any] = {"kind": kind, "attribute": attribute, "severity": severity}
-    expected_value = norm_value(attribute, matcher["value"]) if "value" in matcher else None
+    expected_value = table.norm(attribute, matcher["value"]) if "value" in matcher else None
     tol_text = f" ±{tolerance}" if tolerance else ""
 
     def done(ok: bool, expected: Any, actual: Any, message: str) -> dict[str, Any]:
         result.update(ok=bool(ok), expected=expected, actual=actual, message=message)
         return result
+
+    if kind == "command_received":
+        return _evaluate_command_received(matcher, context, result)
 
     if kind == "first_value":
         actual = values[0] if values else None
@@ -663,14 +953,71 @@ def evaluate_matcher(matcher: dict[str, Any], observations: list[dict[str, Any]]
         ok = low <= len(values) <= high
         return done(ok, [low, high], len(values), f"{attribute} 上报 {len(values)} 次，期望 {low}..{high} 次")
     if kind == "default_response":
-        expected_status = as_int(matcher.get("status", 0), "status")
+        expected_status = parse_status(matcher.get("status", 0), "status")
         responses = context.get("default_responses", [])
         actual = responses[-1]["status"] if responses else None
         ok = actual == expected_status
         return done(ok, expected_status, actual,
-                    f"Default Response 状态 = {('0x%02X' % actual) if actual is not None else '未收到'}，"
-                    f"期望 0x{expected_status:02X}")
+                    f"Default Response 状态 = {status_text(actual) if actual is not None else '未收到'}，"
+                    f"期望 {status_text(expected_status)}")
     raise ScriptError(f"未知 matcher {kind!r}")
+
+
+def _evaluate_command_received(matcher: dict[str, Any], context: dict[str, Any],
+                               result: dict[str, Any]) -> dict[str, Any]:
+    """Frames the device sent to the gateway (e.g. a Button Action on 0xE004).
+
+    context["commands"]: {"t", "cluster", "command_id", "cluster_specific",
+    "server_to_client", "payload" (hex), "ep", "dest_ep"}, t relative to the anchor.
+    """
+    cluster = as_int(matcher["cluster"], "cluster")
+    command_id = as_int(matcher["command_id"], "command_id") if "command_id" in matcher else None
+    payload = hex_bytes(matcher.get("payload"))
+    exact = bool(matcher.get("payload_exact"))
+    endpoint = matcher.get("src_endpoint", "target")
+    if endpoint == "target":
+        endpoint = context.get("endpoint")
+    elif endpoint != "any":
+        endpoint = as_int(endpoint, "src_endpoint")
+    direction = matcher.get("direction", "any")
+    specific = matcher.get("cluster_specific", True)
+    within = as_int(matcher["within_ms"], "within_ms") if "within_ms" in matcher else None
+    if "count" in matcher:
+        low = high = as_int(matcher["count"], "count")
+    else:
+        low, high = as_int(matcher.get("min", 1), "min"), as_int(matcher.get("max", 10 ** 6), "max")
+
+    def wanted(item: dict[str, Any]) -> bool:
+        if item["cluster"] != cluster or (command_id is not None and item["command_id"] != command_id):
+            return False
+        if specific is not None and specific != "any" and bool(item["cluster_specific"]) != bool(specific):
+            return False
+        if direction != "any" and item["server_to_client"] != (direction == "server_to_client"):
+            return False
+        if endpoint not in (None, "any") and item.get("ep") != endpoint:
+            return False
+        if within is not None and item["t"] > within:
+            return False
+        data = item["payload"]
+        return data == payload if exact else data.startswith(payload)
+
+    pool = [item for item in context.get("commands", []) if wanted(item)]
+    ok = low <= len(pool) <= high
+    what = f"0x{cluster:04X} 命令" + (f" 0x{command_id:02X}" if command_id is not None else "")
+    if payload:
+        what += f" 载荷{'=' if exact else '以 '}{payload}{'' if exact else ' 开头'}"
+    if endpoint not in (None, "any"):
+        what += f"（源端点 {endpoint}）"
+    scope = f"前 {within} ms 内" if within is not None else "窗口内"
+    expected = f"{low} 次" if low == high else (f"≥{low} 次" if high >= 10 ** 6 else f"{low}..{high} 次")
+    seen = "，".join(f"+{item['t']}ms {item['payload'] or '-'}" for item in pool[:8])
+    others = [item for item in context.get("commands", []) if item not in pool and item["cluster"] == cluster]
+    hint = ("；同簇其他帧：" + "，".join(f"+{i['t']}ms ep{i.get('ep')} 0x{i['command_id']:02X} {i['payload'] or '-'}"
+                                     for i in others[:5])) if others and not ok else ""
+    result.update(attribute=None, ok=ok, expected=[low, high], actual=len(pool),
+                  message=f"{scope}收到 {what} {len(pool)} 次" + (f"（{seen}）" if seen else "")
+                          + f"，期望 {expected}{hint}")
+    return result
 
 
 def step_status_from_matchers(results: list[dict[str, Any]]) -> str:
@@ -717,9 +1064,10 @@ class TestRunner:
         self.gateway_eui64 = gateway_eui64 or (lambda: None)
         self.busy_check = busy_check or (lambda: None)
         self.clock = clock
-        self.response_timeout = response_timeout
+        self.response_timeout = self.base_response_timeout = response_timeout
         self.tx_timeout = tx_timeout
-        self.bind_timeout = bind_timeout
+        self.bind_timeout = self.base_bind_timeout = bind_timeout
+        self.attrs = BUILTIN_ATTRIBUTES
         self.inter_command_delay = inter_command_delay
         # The panel default (1.2 s) is tight while the host is busy answering reports.
         self.prompt_timeout = prompt_timeout
@@ -792,12 +1140,26 @@ class TestRunner:
         endpoints = device.get("endpoints") or {}
         if str(endpoint) not in endpoints:
             raise ValueError(f"设备没有已发现的端点 {endpoint}")
-        clusters = endpoints[str(endpoint)].get("inClusters") or []
-        if CLUSTER_ON_OFF not in clusters:
-            raise ValueError(f"端点 {endpoint} 不支持 On/Off 簇")
+        table = AttributeTable.from_script(script)
+        setup = script.get("setup", {})
         run_setup = bool(request.get("setup", True))
-        gateway_eui = self.gateway_eui64() if run_setup and script.get("setup", {}).get("bind", True) else None
-        if run_setup and script.get("setup", {}).get("bind", True) and not gateway_eui:
+        binds = bind_clusters(setup) if run_setup else []
+        info = endpoints[str(endpoint)]
+        in_clusters = info.get("inClusters") or []
+        all_clusters = set(in_clusters) | set(info.get("outClusters") or [])
+        if run_setup and all_clusters:
+            missing = [c for c in binds if c not in all_clusters]
+            if missing:
+                hint = "；纯开关设备请把 setup.bind 写成 [\"0x0006\"]" if CLUSTER_LEVEL in missing else ""
+                raise ValueError(f"端点 {endpoint} 没有簇 {', '.join('0x%04X' % c for c in missing)}，"
+                                 f"脚本 setup.bind 要绑定它{hint}")
+            for item in reporting_items(setup):
+                cluster = table.spec(table.resolve(item["attribute"]))[0]
+                if in_clusters and cluster not in in_clusters:
+                    raise ValueError(f"端点 {endpoint} 没有服务端簇 0x{cluster:04X}，"
+                                     f"不能配置 {item['attribute']} 上报（检查 setup.reporting）")
+        gateway_eui = self.gateway_eui64() if binds else None
+        if binds and not gateway_eui:
             raise ValueError("未知网关 EUI64，请确认网关已启动并已执行 info")
         self.device_center.lock_for_test(key)
         started = datetime.now().astimezone()
@@ -811,20 +1173,26 @@ class TestRunner:
             self.known = {}
             self.last_values = {}
             self.log_lines.clear()
+            self.attrs = table
+            # Sleepy end devices answer only after their next poll.
+            self.response_timeout = (as_int(script["response_timeout_ms"]) / 1000 if "response_timeout_ms" in script
+                                     else self.base_response_timeout)
+            self.bind_timeout = max(self.base_bind_timeout, self.response_timeout)
             self.t0 = self.clock()
             self.target = {"id": key, "node": int(device["nodeId"], 16), "nodeId": device["nodeId"],
                            "generation": device["generation"], "endpoint": endpoint, "eui64": device.get("eui64"),
                            "gateway_eui64": gateway_eui}
             self.result = {
                 "format": RESULT_FORMAT, "id": run_id, "status": "setup",
-                "script": {k: script.get(k) for k in ("id", "title", "source", "description")},
+                "script": {k: script.get(k) for k in ("id", "title", "project", "source", "description")},
                 "device": {"id": key, "name": device.get("name"), "eui64": device.get("eui64"),
                            "nodeId": device["nodeId"], "endpoint": endpoint, "manufacturer": device.get("manufacturer"),
                            "model": device.get("model"), "swBuildId": device.get("swBuildId"),
                            "dateCode": device.get("dateCode")},
                 "gateway": {"session": getattr(self.gateway, "session_id", None), "eui64": gateway_eui},
                 "options": {"setup": run_setup, "manual": manual, "stop_on_fail": bool(request.get("stop_on_fail")),
-                            "mode": "report", "cases": [case["id"] for case in cases]},
+                            "mode": "report", "cases": [case["id"] for case in cases],
+                            "response_timeout_ms": int(self.response_timeout * 1000)},
                 "started_at": started.isoformat(timespec="seconds"), "finished_at": None,
                 "setup": {"steps": [], "status": "pending"},
                 "cases": [self._new_case(case) for case in cases],
@@ -893,6 +1261,8 @@ class TestRunner:
                 record["zcl_seq"] = frame["seq"]
                 record["command_id"] = frame["command_id"]
                 record["cluster_specific"] = frame["cluster_specific"]
+                record["server_to_client"] = frame["server_to_client"]
+                record["payload"] = frame["payload"].hex().upper()
                 if kind == "rx":
                     try:
                         record["decoded"] = decode_global(frame)
@@ -906,9 +1276,9 @@ class TestRunner:
             if decoded.get("kind") in {"report", "read-response"} and record.get("ep") == target["endpoint"]:
                 for item in decoded.get("records", []):
                     if "value" in item:
-                        name = attribute_name(record["cluster"], item["attribute"])
+                        name = self.attrs.name_of(record["cluster"], item["attribute"])
                         value = item["value"]
-                        self.last_values[name] = norm_value(name, value) if name in ATTRIBUTES and isinstance(value, int) else value
+                        self.last_values[name] = self.attrs.norm(name, value) if isinstance(value, int) else value
             self.cond.notify_all()
 
     def _events_after(self, mark: int) -> list[dict[str, Any]]:
@@ -1045,15 +1415,16 @@ class TestRunner:
     def _observation(self, record: dict[str, Any], item: dict[str, Any], source: str) -> dict[str, Any] | None:
         if "value" not in item:
             return None
-        name = attribute_name(record["cluster"], item["attribute"])
+        name = self.attrs.name_of(record["cluster"], item["attribute"])
         value = item["value"]
-        if name in ATTRIBUTES and isinstance(value, int):
-            value = norm_value(name, value)
+        if isinstance(value, int):
+            value = self.attrs.norm(name, value)
         return {"t_ms": self._ms(record["t"]), "attribute": name, "value": value, "source": source,
                 "seq": record.get("zcl_seq"), "_t": record["t"], "_host_t": record.get("host_t")}
 
-    def _read(self, name: str, step: dict[str, Any]) -> dict[str, Any]:
-        cluster, attribute, _ = ATTRIBUTES[name]
+    def _read(self, ref: str, step: dict[str, Any]) -> dict[str, Any]:
+        name = self.attrs.resolve(ref) or ref
+        cluster, attribute, _ = self.attrs.spec(name)
         info = self._send([f"zcl global read 0x{cluster:04X} 0x{attribute:04X}"], cluster, step, f"读取 {name}",
                           expect_command=0x00)
         record = self._response(info, 0x01)
@@ -1062,7 +1433,7 @@ class TestRunner:
         for item in (record.get("decoded") or {}).get("records", []):
             if item.get("attribute") == attribute:
                 if item.get("status", 0) != 0:
-                    raise StepError(f"读取 {name} 失败，状态 0x{item['status']:02X}")
+                    raise StepError(f"读取 {name} 失败，状态 {status_text(item['status'])}")
                 observation = self._observation(record, item, "read")
                 if observation is None:
                     raise StepError(f"读取 {name} 的数据类型无法解析")
@@ -1072,18 +1443,35 @@ class TestRunner:
         raise StepError(f"读取 {name} 的响应中没有该属性")
 
     def _write(self, cluster: int, attribute: int, data_type: int, value: int, label: str,
-               step: dict[str, Any], verify: bool) -> None:
+               step: dict[str, Any], verify: bool) -> int | None:
+        """Write one attribute; returns the ZCL status (None when not verified).
+
+        A device may refuse with a Default Response for the write (e.g. 0xC3 on
+        an unsupported cluster) instead of a Write Attributes Response."""
         info = self._send([f"zcl global write 0x{cluster:04X} 0x{attribute:04X} 0x{data_type:02X} "
                            f"{hex_value(data_type, value)}"], cluster, step, f"写入 {label}={value}",
                           expect_command=0x02)
         if not verify:
-            return
-        record = self._response(info, 0x04)
+            return None
+        seq = info.get("zcl_seq")
+
+        def matches(record: dict[str, Any]) -> bool:
+            if (record["kind"] != "rx" or record["cluster"] != cluster or record.get("profile") == 0
+                    or record.get("cluster_specific") or (seq is not None and record.get("zcl_seq") != seq)):
+                return False
+            if record.get("command_id") == 0x04:
+                return True
+            decoded = record.get("decoded") or {}
+            return decoded.get("kind") == "default-response" and decoded.get("command_id") == 0x02
+        record = self._wait_event(matches, info["_mark"], self.response_timeout)
         if record is None:
             raise StepError(self._no_reply_message(info, f"写入 {label}", "Write Attributes Response"))
-        statuses = [item.get("status") for item in (record.get("decoded") or {}).get("records", [])]
-        if any(status != 0 for status in statuses):
-            raise StepError(f"写入 {label} 被拒绝，状态 {', '.join('0x%02X' % s for s in statuses)}")
+        decoded = record.get("decoded") or {}
+        if decoded.get("kind") == "default-response":
+            return decoded["status"]
+        statuses = [item.get("status") for item in decoded.get("records", [])]
+        bad = [status for status in statuses if status]
+        return bad[0] if bad else 0
 
     # -------------------------------------------------------- run loop
 
@@ -1144,27 +1532,27 @@ class TestRunner:
         container = self.result["setup"]
         target = self.target
         try:
-            if setup.get("bind", True):
-                for cluster in (CLUSTER_ON_OFF, CLUSTER_LEVEL):
-                    step = self._new_step({"type": "bind", "label": f"绑定 0x{cluster:04X} 到网关"}, len(container["steps"]))
-                    container["steps"].append(step)
-                    self._begin_step(step, None)
-                    info = self._send([f"zdo bind 0x{target['node']:04X} {target['endpoint']} 1 0x{cluster:04X} "
-                                       f"{{{target['eui64']}}} {{{target['gateway_eui64']}}}"], ZDO_BIND_REQUEST, step,
-                                      f"ZDO Bind 0x{cluster:04X}", zdo=True)
-                    seq = info.get("zdo_seq")
-                    record = self._wait_event(lambda r: r["kind"] == "rx" and r["profile"] == 0
-                                              and r["cluster"] == ZDO_BIND_RESPONSE
-                                              and (seq is None or r.get("zdo_seq") == seq),
-                                              info["_mark"], self.bind_timeout)
-                    if record is None:
-                        raise StepError(f"绑定 0x{cluster:04X} 未收到 Bind Response")
-                    if record.get("zdo_status") != 0:
-                        raise StepError(f"绑定 0x{cluster:04X} 失败，ZDO 状态 0x{record.get('zdo_status') or 0:02X}")
-                    self._end_step(step, "pass", "绑定成功")
-            for item in setup.get("reporting", DEFAULT_REPORTING):
-                name = item["attribute"]
-                cluster, attribute, data_type = ATTRIBUTES[name]
+            for cluster in bind_clusters(setup):
+                step = self._new_step({"type": "bind", "label": f"绑定 0x{cluster:04X} 到网关"}, len(container["steps"]))
+                container["steps"].append(step)
+                self._begin_step(step, None)
+                info = self._send([f"zdo bind 0x{target['node']:04X} {target['endpoint']} 1 0x{cluster:04X} "
+                                   f"{{{target['eui64']}}} {{{target['gateway_eui64']}}}"], ZDO_BIND_REQUEST, step,
+                                  f"ZDO Bind 0x{cluster:04X}", zdo=True)
+                seq = info.get("zdo_seq")
+                record = self._wait_event(lambda r: r["kind"] == "rx" and r["profile"] == 0
+                                          and r["cluster"] == ZDO_BIND_RESPONSE
+                                          and (seq is None or r.get("zdo_seq") == seq),
+                                          info["_mark"], self.bind_timeout)
+                if record is None:
+                    raise StepError(f"绑定 0x{cluster:04X} 未收到 Bind Response")
+                if record.get("zdo_status") != 0:
+                    raise StepError(f"绑定 0x{cluster:04X} 失败，ZDO 状态 0x{record.get('zdo_status') or 0:02X}")
+                self._end_step(step, "pass", "绑定成功")
+            for item in reporting_items(setup):
+                name = self.attrs.resolve(item["attribute"])
+                cluster, attribute, data_type = self.attrs.spec(name)
+                data_type = as_int(item["type"]) if "type" in item else data_type
                 low, high = as_int(item.get("min", 0)), as_int(item.get("max", 3600))
                 change = hex_value(data_type, as_int(item.get("change", 0))) if data_type != 0x10 else "{00}"
                 step = self._new_step({"type": "configure_reporting",
@@ -1192,6 +1580,7 @@ class TestRunner:
 
     def _new_case(self, case: dict[str, Any]) -> dict[str, Any]:
         return {"id": case["id"], "number": case.get("number") or case["id"], "sheet": case.get("sheet"),
+                "group": case_group(case),
                 "order": case.get("order"), "title": case.get("title") or "", "notes": case.get("notes") or "",
                 "flags": case_flags(case), "verdict": "pending", "started_at": None, "t_start_ms": None,
                 "t_end_ms": None, "steps": [self._new_step(step, index) for index, step in enumerate(case["steps"])]}
@@ -1277,25 +1666,21 @@ class TestRunner:
     def _run_step(self, step: dict[str, Any], record: dict[str, Any], context: dict[str, Any]) -> tuple[str, str | None]:
         kind = step["type"]
         if kind == "write_attributes":
-            verify = step.get("verify", True)
-            for name, value in (step.get("attributes") or {}).items():
-                cluster, attribute, data_type = ATTRIBUTES[name]
-                value = norm_value(name, value)
-                self._write(cluster, attribute, data_type, value, name, record, verify)
-                self.known[name] = value
-            for item in step.get("raw") or []:
-                self._write(as_int(item["cluster"]), as_int(item["id"]), as_int(item["type"]), as_int(item["value"]),
-                            f"0x{as_int(item['cluster']):04X}:0x{as_int(item['id']):04X}", record, verify)
-            return "pass", None
+            return self._write_step(step, record)
         if kind == "read":
-            values = {name: self._read(name, record)["value"] for name in step["attributes"]}
+            table = self.attrs
+            values = {}
+            for ref in step["attributes"]:
+                name = table.resolve(ref) or ref
+                values[name] = self._read(name, record)["value"]
             bad = []
-            for name, expected in (step.get("expect") or {}).items():
+            for ref, expected in (step.get("expect") or {}).items():
+                name = table.resolve(ref) or ref
                 tolerance = as_int(expected.get("tolerance", 0)) if isinstance(expected, dict) else 0
-                value = norm_value(name, expected["value"] if isinstance(expected, dict) else expected)
+                value = table.norm(name, expected["value"] if isinstance(expected, dict) else expected)
                 if not _within(values[name], value, tolerance):
-                    bad.append(f"{name}={display_value(name, values[name])}（期望 {display_value(name, value)}）")
-            shown = "，".join(f"{n}={display_value(n, v)}" for n, v in values.items())
+                    bad.append(f"{name}={table.display(name, values[name])}（期望 {table.display(name, value)}）")
+            shown = "，".join(f"{n}={table.display(n, v)}" for n, v in values.items())
             return ("fail", "不符合：" + "；".join(bad)) if bad else ("pass", shown)
         if kind == "set_state":
             return self._set_state(step, record)
@@ -1326,7 +1711,14 @@ class TestRunner:
             response = self._prompt("operator", step["prompt"], record, step.get("timeout_ms"))
             if response["action"] == "skip-case":
                 raise SkipCase()
-            record["operator"] = {"action": "continue", "t_ms": self._ms(response["t"])}
+            if step.get("anchor", "prompt") == "continue":
+                # Times are measured from "继续"; frames between the prompt and
+                # the click are still collected, with negative times.
+                context["anchor"] = {"_t": response["t"], "_host_t": None, "_mark": mark,
+                                     "t_ms": self._ms(response["t"]), "description": "操作员点击继续",
+                                     "cluster": None, "_collect_t": shown}
+            record["operator"] = {"action": "continue", "t_ms": self._ms(response["t"]),
+                                  "anchor": step.get("anchor", "prompt")}
             return "pass", f"操作员在 +{self._ms(response['t']) - self._ms(shown)} ms 后确认继续"
         if kind == "confirm":
             if self.result["options"]["manual"] == "skip":
@@ -1394,12 +1786,37 @@ class TestRunner:
                 return int((now - start) * 1000)
             self._sleep(0.05)
 
+    def _write_step(self, step: dict[str, Any], record: dict[str, Any]) -> tuple[str, str | None]:
+        verify = step.get("verify", True)
+        problems: list[str] = []
+        notes: list[str] = []
+        for item in write_items(step, self.attrs):
+            label, expected = item["label"], item["expect_status"]
+            status = self._write(item["cluster"], item["id"], item["type"], item["value"], label, record, verify)
+            shown = f"{label}={item['value']}"
+            if status is None or status == 0:
+                self.known[item["name"]] = item["value"]
+            if expected is None:
+                if status:
+                    raise StepError(f"写入 {shown} 被拒绝，状态 {status_text(status)}")
+                continue
+            if status == expected:
+                notes.append(f"写入 {shown} → {status_text(status)}（符合期望）")
+            else:
+                problems.append(f"写入 {shown} → {status_text(status)}，期望 {status_text(expected)}")
+        if problems:
+            return "fail", "；".join(problems + notes)
+        return "pass", "；".join(notes) or None
+
     def _set_state(self, step: dict[str, Any], record: dict[str, Any]) -> tuple[str, str | None]:
-        level = as_int(step["level"])
         on = bool(step["on"])
         settle_quiet = as_int(step.get("settle_quiet_ms", 2000)) / 1000
+        settle_min = as_int(step.get("settle_min_ms", 0)) / 1000
         # Let the previous case (e.g. a knob press still fading) finish first.
         self._wait_quiet(settle_quiet, 8.0)
+        if step.get("level") is None:
+            return self._set_switch_state(step, record, on, settle_quiet, settle_min)
+        level = as_int(step["level"])
         for attempt in (1, 2):
             self._send([f"zcl level-control o-mv-to-level {level} 0"], CLUSTER_LEVEL, record, f"设定亮度 {level}（立即开灯）")
             self._wait_quiet(1.0, 5.0, 0.3)
@@ -1410,7 +1827,7 @@ class TestRunner:
             self._send(["zcl on-off off"], CLUSTER_ON_OFF, record, "关灯")
             off_tenths = self.known.get("offTransitionTime")
             off_tenths = self.known.get("onOffTransitionTime", 10) if off_tenths in (None, 0xFFFF) else off_tenths
-            minimum = (off_tenths or 0) / 10 + 0.5
+            minimum = max((off_tenths or 0) / 10 + 0.5, settle_min)
             self._wait_quiet(settle_quiet, max(as_int(step.get("settle_max_ms", 15000)) / 1000, minimum + 1), minimum)
         actual_on = self._read("onOff", record)["value"]
         actual_level = self._read("currentLevel", record)["value"]
@@ -1423,6 +1840,22 @@ class TestRunner:
         if problems:
             return "precondition-failed", f"期望 {state_text}，读回 {'，'.join(problems)}"
         return "pass", f"已到达 {state_text}"
+
+    def _set_switch_state(self, step: dict[str, Any], record: dict[str, Any], on: bool,
+                          settle_quiet: float, settle_min: float) -> tuple[str, str | None]:
+        """set_state without level: On/Off only, for switches without 0x0008."""
+        word = "on" if on else "off"
+        maximum = max(as_int(step.get("settle_max_ms", 15000)) / 1000, settle_min + 1)
+        actual = None
+        for attempt in (1, 2):
+            self._send([f"zcl on-off {word}"], CLUSTER_ON_OFF, record, "打开" if on else "关闭")
+            self._wait_quiet(min(settle_quiet, 1.0) if attempt == 1 else settle_quiet, maximum,
+                             max(settle_min, 0.3))
+            actual = self._read("onOff", record)["value"]
+            if bool(actual) == on:
+                return "pass", f"已到达 {'开' if on else '关'}"
+            self._log(f"  onOff 未到达 {word.upper()}，重发一次")
+        return "precondition-failed", f"期望 {'开' if on else '关'}，读回 onOff={display_value('onOff', actual)}"
 
     def _burst(self, step: dict[str, Any], record: dict[str, Any], context: dict[str, Any]) -> tuple[str, str | None]:
         transport = step.get("transport", "auto")
@@ -1489,11 +1922,21 @@ class TestRunner:
         record["window_ms"] = int((self.clock() - anchor_t) * 1000)
         observations: list[dict[str, Any]] = []
         default_responses: list[dict[str, Any]] = []
+        commands: list[dict[str, Any]] = []
         last_command = context.get("last_command") or anchor
+        collect_t = anchor.get("_collect_t", anchor_t)
         with self.cond:
             for event in self._events_after(anchor.get("_mark", 0)):
-                if event["kind"] != "rx" or event["t"] < anchor_t or event.get("profile") == 0:
+                if event["kind"] != "rx" or event["t"] < collect_t or event.get("profile") == 0:
                     continue
+                if event.get("command_id") is not None and len(commands) < STEP_OBSERVATION_LIMIT:
+                    # Any endpoint: a two-gang switch sends Button Actions from the gang's endpoint.
+                    commands.append({"_t": event["t"], "_host_t": event.get("host_t"), "cluster": event["cluster"],
+                                     "command_id": event["command_id"],
+                                     "cluster_specific": bool(event.get("cluster_specific")),
+                                     "server_to_client": bool(event.get("server_to_client")),
+                                     "payload": event.get("payload", ""), "ep": event.get("ep"),
+                                     "dest_ep": event.get("dest_ep")})
                 if event.get("ep") != self.target["endpoint"]:
                     continue
                 decoded = event.get("decoded") or {}
@@ -1527,15 +1970,26 @@ class TestRunner:
         record["time_source"] = "host" if use_host else "panel"
         record["anchor_ms"] = self._ms(anchor_t)
         record["observations"] = [dict({k: v for k, v in o.items() if not k.startswith("_")}, rel_ms=r["t"],
-                                       **({"stale": True} if r.get("stale") else {}))
+                                       **({"stale": True} if r.get("stale") else {}),
+                                       **({"display": shown} if (shown := self.attrs.display(o["attribute"], o["value"]))
+                                          != str(o["value"]) else {}))
                                   for o, r in zip(observations, relative)][:STEP_OBSERVATION_LIMIT]
         record["default_responses"] = default_responses
-        results = [evaluate_matcher(m, relative, {"default_responses": default_responses}) for m in step["matchers"]]
+        received = []
+        for item in commands:
+            rel = ((item["_host_t"] - anchor["_host_t"]) if use_host and item["_host_t"] is not None
+                   else (item["_t"] - anchor_t) * 1000)
+            received.append(dict({k: v for k, v in item.items() if not k.startswith("_")}, t=int(round(rel))))
+        # Only cluster-specific frames are shown; global ones are already observations.
+        record["commands"] = [item for item in received if item["cluster_specific"]]
+        context_data = {"default_responses": default_responses, "commands": received, "attributes": self.attrs,
+                        "endpoint": self.target["endpoint"]}
+        results = [evaluate_matcher(m, relative, context_data) for m in step["matchers"]]
         record["matchers"] = results
         status = step_status_from_matchers(results)
         failed = [r["message"] for r in results if not r["ok"] and r["severity"] == "required"]
         info = [r["message"] for r in results if not r["ok"] and r["severity"] == "info"]
-        summary = f"{len(relative)} 条观测；" + ("；".join(failed) if failed else "必需检查全部通过")
+        summary = f"{len(relative)} 条观测" + (f"、{len(record['commands'])} 条命令" if record["commands"] else "") + "；" + ("；".join(failed) if failed else "必需检查全部通过")
         if info:
             summary += f"（提示 {len(info)} 项）"
         return status, summary
@@ -1592,11 +2046,18 @@ def _strip_private(value: Any) -> Any:
 def describe_step(step: dict[str, Any]) -> str:
     kind = step.get("type")
     if kind == "write_attributes":
-        items = [f"{k}={v}" for k, v in (step.get("attributes") or {}).items()]
-        return "写入属性 " + ", ".join(items or ["raw"])
+        items = [f"{k}={v.get('value') if isinstance(v, dict) else v}" for k, v in (step.get("attributes") or {}).items()]
+        items += [f"0x{as_int(i.get('cluster', 0)):04X}:0x{as_int(i.get('id', 0)):04X}={i.get('value')}"
+                  for i in step.get("raw") or [] if isinstance(i, dict)]
+        rejected = step.get("expect_status") is not None or any(
+            isinstance(v, dict) and v.get("expect_status") is not None for v in (step.get("attributes") or {}).values()
+        ) or any(isinstance(i, dict) and i.get("expect_status") is not None for i in step.get("raw") or [])
+        return "写入属性 " + ", ".join(items or ["raw"]) + ("（检查返回状态）" if rejected else "")
     if kind == "read":
         return "读取 " + ", ".join(step.get("attributes") or [])
     if kind == "set_state":
+        if step.get("level") is None:
+            return f"前置状态：{'开' if step.get('on') else '关'}"
         return f"前置状态：{'开' if step.get('on') else '关'}，亮度 {step.get('level')}"
     if kind == "command":
         try:
@@ -1632,10 +2093,18 @@ def render_html_report(result: dict[str, Any]) -> str:
     options = result.get("options") or {}
     chips = "".join(f'<span class="chip v-{esc(k)}">{esc(VERDICT_LABELS.get(k, k))} {esc(v)}</span>'
                     for k, v in sorted(summary.items(), key=lambda kv: -VERDICT_RANK.get(kv[0], 0)))
-    rows = "".join(
-        f'<tr><td>{esc(c.get("number"))}</td><td>{esc(c.get("title"))}</td>'
-        f'<td><span class="chip v-{esc(c.get("verdict"))}">{esc(VERDICT_LABELS.get(c.get("verdict"), c.get("verdict")))}</span></td>'
-        f'<td>{esc(_case_problem(c))}</td></tr>' for c in cases)
+    grouped = any(c.get("group") for c in cases)
+    row_list = []
+    last_group = object()
+    for c in cases:
+        if grouped and c.get("group") != last_group:
+            last_group = c.get("group")
+            row_list.append(f'<tr class="group"><th colspan="4">{esc(last_group or "未分组")}</th></tr>')
+        row_list.append(
+            f'<tr><td>{esc(c.get("number"))}</td><td>{esc(c.get("title"))}</td>'
+            f'<td><span class="chip v-{esc(c.get("verdict"))}">{esc(VERDICT_LABELS.get(c.get("verdict"), c.get("verdict")))}</span></td>'
+            f'<td>{esc(_case_problem(c))}</td></tr>')
+    rows = "".join(row_list)
     details = []
     for case in [{"number": "初始化", "title": "绑定与上报配置", "verdict": (result.get("setup") or {}).get("status"),
                   "steps": (result.get("setup") or {}).get("steps", [])}] + cases:
@@ -1651,10 +2120,16 @@ def render_html_report(result: dict[str, Any]) -> str:
                 extra.append(f'<span class="m-{"ok" if matcher["ok"] else matcher["severity"]}">{mark} {esc(matcher["message"])}</span>')
             observations = step.get("observations") or []
             if observations:
-                text = " · ".join(f'+{o.get("rel_ms", o.get("t_ms"))}ms {o["attribute"]}={display_value(o["attribute"], o["value"])}'
+                text = " · ".join(f'+{o.get("rel_ms", o.get("t_ms"))}ms {o["attribute"]}='
+                                  f'{o.get("display") or display_value(o["attribute"], o["value"])}'
                                   f'{"(读)" if o["source"] == "read" else ""}{"(重复)" if o.get("stale") else ""}'
                                   for o in observations[:80])
                 extra.append(f'<span class="obs">{esc(text)}</span>')
+            commands = step.get("commands") or []
+            if commands:
+                text = " · ".join(f'+{c.get("t")}ms ep{c.get("ep")} 0x{c["cluster"]:04X}/0x{c["command_id"]:02X}'
+                                  f' {{{c.get("payload") or ""}}}' for c in commands[:40])
+                extra.append(f'<span class="obs">收到命令：{esc(text)}</span>')
             operator = step.get("operator")
             if operator:
                 extra.append(f'操作员：{esc(operator.get("action"))} {esc(operator.get("comment") or "")}')
@@ -1669,7 +2144,8 @@ def render_html_report(result: dict[str, Any]) -> str:
             f'{"<p class=notes>" + esc(case.get("notes")) + "</p>" if case.get("notes") else ""}'
             f'<table><thead><tr><th>t (ms)</th><th>步骤</th><th>状态</th><th>详情</th></tr></thead>'
             f'<tbody>{"".join(step_rows)}</tbody></table></section>')
-    meta = [("脚本", f'{script.get("title")} ({script.get("id")})'), ("来源", script.get("source")),
+    meta = [("脚本", f'{script.get("title")} ({script.get("id")})'), ("项目", script.get("project") or "-"),
+            ("来源", script.get("source")),
             ("设备", f'{device.get("name") or ""} {device.get("manufacturer") or ""} {device.get("model") or ""}'),
             ("IEEE / 短地址 / 端点", f'{device.get("eui64")} / {device.get("nodeId")} / {device.get("endpoint")}'),
             ("软件版本 / 日期代码", f'{device.get("swBuildId") or "-"} / {device.get("dateCode") or "-"}'),
@@ -1694,7 +2170,7 @@ th{{color:var(--muted);font-weight:600;border-top:0}} td:first-child{{white-spac
 .v-pass{{background:#e7f6ec;color:#166534}} .v-fail,.v-error{{background:#fdecec;color:#b42318}}
 .v-inconclusive,.v-warn,.v-precondition-failed{{background:#fff4e0;color:#9a5b00}} .v-skipped,.v-not-run,.v-aborted{{background:#eef2f7;color:#64748b}}
 .m-ok{{color:#166534}} .m-required{{color:#b42318}} .m-info{{color:#9a5b00}} .obs{{color:var(--muted);font-family:ui-monospace,Consolas,monospace;font-size:12px}}
-.notes{{color:var(--muted);margin:0 0 8px}} .summary{{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}}
+.notes{{color:var(--muted);margin:0 0 8px}} tr.group th{{background:#f1f5f9;color:var(--text);padding:6px 8px}} .summary{{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}}
 @media print{{body{{background:#fff}} .card,section{{break-inside:avoid}}}}
 </style></head><body><main>
 <h1>Zigbee 设备自动测试报告</h1><p style="color:var(--muted);margin:0">{esc(result.get("id"))}</p>

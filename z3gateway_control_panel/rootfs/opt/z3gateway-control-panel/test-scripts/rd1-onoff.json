@@ -2,6 +2,7 @@
  "format": "z3-test-script/1",
  "id": "rd1-onoff",
  "title": "C-ZB-RD1 OnOff Tests",
+ "project": "C-ZB-RD1（D590M-ZG）",
  "source": "C-ZB-RD1 Functional Testing - Firmware Update 200726.xlsx / C-ZB-RD1 - OnOff Tests",
  "description": "由 build_rd1_scripts.py 从客户测试表格自动生成；旋钮动作与灯光观察为人工步骤。",
  "endpoint": 1,
